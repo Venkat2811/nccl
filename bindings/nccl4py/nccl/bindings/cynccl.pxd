@@ -5,14 +5,28 @@
 # This code was automatically generated with version 2.30.7. Do not modify it directly.
 
 
-from libc.stdint cimport int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t
-
-
 ###############################################################################
 # Types (structs, enums, ...)
 ###############################################################################
 
 # enums
+
+# <<<< PREAMBLE CONTENT >>>>
+
+from libc.stdint cimport (
+    int16_t,
+    int32_t,
+    int64_t,
+    int8_t,
+    uint16_t,
+    uint32_t,
+    uint64_t,
+    uint8_t,
+)
+
+
+# <<<< END OF PREAMBLE CONTENT >>>>
+
 ctypedef enum ncclResult_t "ncclResult_t":
     ncclSuccess "ncclSuccess" = 0
     ncclUnhandledCudaError "ncclUnhandledCudaError" = 1

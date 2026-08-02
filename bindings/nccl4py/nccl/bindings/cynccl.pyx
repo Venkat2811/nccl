@@ -4,6 +4,24 @@
 #
 # This code was automatically generated with version 2.30.7. Do not modify it directly.
 
+
+# <<<< PREAMBLE CONTENT >>>>
+
+cimport cython as _cyb_cython
+from libc.stdint cimport (
+    int16_t,
+    int32_t,
+    int64_t,
+    int8_t,
+    uint16_t,
+    uint32_t,
+    uint64_t,
+    uint8_t,
+)
+
+
+# <<<< END OF PREAMBLE CONTENT >>>>
+
 from ._internal cimport nccl as _nccl
 
 
@@ -259,6 +277,7 @@ cdef ncclResult_t ncclParamGetAllParameterKeys(const char*** table, int* tableLe
     return _nccl._ncclParamGetAllParameterKeys(table, tableLen)
 
 
+@_cyb_cython.show_performance_hints(False)
 cdef void ncclParamDumpAll() except* nogil:
     _nccl._ncclParamDumpAll()
 

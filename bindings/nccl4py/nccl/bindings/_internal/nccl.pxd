@@ -4,6 +4,23 @@
 #
 # This code was automatically generated with version 2.30.7. Do not modify it directly.
 
+
+# <<<< PREAMBLE CONTENT >>>>
+
+from libc.stdint cimport (
+    int16_t,
+    int32_t,
+    int64_t,
+    int8_t,
+    uint16_t,
+    uint32_t,
+    uint64_t,
+    uint8_t,
+)
+
+
+# <<<< END OF PREAMBLE CONTENT >>>>
+
 from ..cynccl cimport *
 
 
