@@ -109,6 +109,12 @@ from ._internal.utils cimport (nested_resource, nullable_unique_ptr,
 _version_span = "with version 2.30.7"
 __version__ = _version_span.split()[-1]
 
+# NCCL_VERSION(X,Y,Z) = X*10000 + Y*100 + Z (NCCL >= 2.9).
+_version_parts = __version__.split(".")
+__version_code__ = (
+    int(_version_parts[0]) * 10000 + int(_version_parts[1]) * 100 + int(_version_parts[2])
+)
+
 
 ###############################################################################
 # POD
@@ -317,7 +323,7 @@ cdef class Config:
 
         self._ptr[0].size = sizeof(ncclConfig_t)
         self._ptr[0].magic = 0xcafebeef
-        self._ptr[0].version = 23007
+        self._ptr[0].version = __version_code__
         self._ptr[0].blocking = -2147483648
         self._ptr[0].cgaClusterSize = -2147483648
         self._ptr[0].minCTAs = -2147483648
@@ -704,7 +710,7 @@ cdef class SimInfo:
 
         self._ptr[0].size = sizeof(ncclSimInfo_t)
         self._ptr[0].magic = 0x74685283
-        self._ptr[0].version = 23007
+        self._ptr[0].version = __version_code__
         self._ptr[0].estimatedTime = -1.0
 
     def __dealloc__(self):
@@ -1052,7 +1058,7 @@ cdef class CommProperties:
 
         self._ptr[0].size = sizeof(ncclCommProperties_t)
         self._ptr[0].magic = 0xcafebeef
-        self._ptr[0].version = 23007
+        self._ptr[0].version = __version_code__
 
     def __dealloc__(self):
         cdef ncclCommProperties_t *ptr
@@ -3117,7 +3123,7 @@ cdef class DevCommRequirements:
 
         self._ptr[0].size = sizeof(ncclDevCommRequirements_t)
         self._ptr[0].magic = 0xcafebeef
-        self._ptr[0].version = 23007
+        self._ptr[0].version = __version_code__
         self._ptr[0].ginContextCount = 4
         self._ptr[0].ginConnectionType = NCCL_GIN_CONNECTION_NONE
         self._ptr[0].ginTrafficClass = -2147483648
