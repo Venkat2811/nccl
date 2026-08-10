@@ -504,11 +504,34 @@ Values accepted
 
 Plugin suffix, plugin file name, or "none".
 
+.. _NCCL_GIN_PLUGIN:
+
+NCCL_GIN_PLUGIN
+---------------
+(since 2.29.3)
+
+Set it to either a suffix string or to a library name to choose among multiple NCCL GIN (GPU-Initiated Networking) plugins; GIN is used by the device API. It also accepts a comma-separated list which are all considered. This setting will cause NCCL to look for the GIN plugin library using the following strategy, applied to each entry of the list:
+ - If NCCL_GIN_PLUGIN is set, attempt loading the library with name specified by NCCL_GIN_PLUGIN;
+ - If NCCL_GIN_PLUGIN is set and previous failed, attempt loading libnccl-gin-<NCCL_GIN_PLUGIN>.so;
+ - If NCCL_GIN_PLUGIN is not set, attempt loading libnccl-gin.so;
+ - Additionally, look for the GIN symbols in the NET plugin;
+ - Additionally, use NCCL's internal GIN implementations.
+
+For example, setting ``NCCL_GIN_PLUGIN=foo`` will cause NCCL to try to load ``foo`` and, if ``foo`` cannot be found, ``libnccl-gin-foo.so`` (provided that it exists on the system).
+
+NCCL does not stop at the first plugin that initializes successfully: every GIN implementation it manages to initialize stays available, and the one to use is picked when a device communicator is created. Only one implementation is chosen per backend using the rank-order from above.
+
+Values accepted
+^^^^^^^^^^^^^^^
+
+Comma-separated list of plugin suffixes and/or plugin file names, or "none".
+
+
 .. _NCCL_RMA_PLUGIN:
 
 NCCL_RMA_PLUGIN
 ---------------
-(since 2.30.5)
+(since 2.30.7)
 
 Set it to either a suffix string or to a library name to choose among multiple NCCL RMA plugins. The RMA plugin implements host-driven, one-sided network operations; it is used by the host RMA API and by the GIN proxy implementation. It also accepts a comma-separated list, which are tried in order. This setting will cause NCCL to look for the RMA plugin library using the following strategy:
  - If NCCL_RMA_PLUGIN is set, attempt loading the library with name specified by NCCL_RMA_PLUGIN;
@@ -519,7 +542,7 @@ Set it to either a suffix string or to a library name to choose among multiple N
 
 For example, setting ``NCCL_RMA_PLUGIN=foo`` will cause NCCL to try to load ``foo`` and, if ``foo`` cannot be found, ``libnccl-rma-foo.so`` (provided that it exists on the system).
 
-The first plugin that initializes successfully and reports at least one usable device is the one being used; the remaining external plugins are then disabled for the lifetime of the process.
+The first plugin that initializes successfully and reports at least one usable device is the one that is used; the remaining external plugins are then disabled for the lifetime of the process.
 
 Values accepted
 ^^^^^^^^^^^^^^^
