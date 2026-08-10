@@ -109,15 +109,15 @@ ncclDevCommRequirements
 
    .. c:member:: ncclGinConnectionType_t ginConnectionType
 
-      Specifies the type of GIN (GPU-Initiated Networking) connection to establish for the device communicator.
-      This field controls whether GIN is enabled and how it is configured. When set to :c:macro:`NCCL_GIN_CONNECTION_FULL`,
-      GIN is initialized and all ranks connect to all other ranks in the communicator. When set to :c:macro:`NCCL_GIN_CONNECTION_RAIL`,
-      GIN is initialized and each rank connects to other ranks in the same rail team. If GIN resources are requested via ``ginSignalCount``,
-      ``ginCounterCount``, ``barrierCount``, or ``railGinBarrierCount`` while this field is set to
-      :c:macro:`NCCL_GIN_CONNECTION_NONE`, device communicator creation will fail with :c:macro:`ncclInvalidArgument`.
-      Available since NCCL 2.29.7.
+      Specifies the type of GIN connection to establish (see :c:type:`ncclGinConnectionType_t`).
+      If GIN resources are requested (e.g., ``ginSignalCount``, ``ginCounterCount``, ``barrierCount``, or
+      ``railGinBarrierCount``) while this field is :c:macro:`NCCL_GIN_CONNECTION_NONE`, device communicator
+      creation fails with :c:macro:`ncclInvalidArgument`. Available since NCCL 2.29.7.
 
-      See :c:type:`ncclGinConnectionType_t` for possible values.
+   .. c:member:: int ginCustomStride
+
+      Specifies the rank stride when :c:member:`ginConnectionType` is :c:macro:`NCCL_GIN_CONNECTION_CUSTOM_STRIDE`.
+      Available since NCCL 2.31.
 
    .. c:member:: ncclDevResourceRequirements_t* resourceRequirementsList
 
@@ -210,6 +210,14 @@ ncclCommProperties_t
 
       Communicator hash identifier shared across all ranks in the communicator. Available since NCCL 2.31.
 
+   .. c:member:: int ginMinStride
+
+      The minimum value allowed for :c:member:`ginCustomStride`. This value is based
+      on the network connectivity. For example, when :ref:`env_NCCL_CROSS_NIC` is ``0``, ``ginMinStride`` is increased so
+      that strides spanning rail boundaries are not possible. ``ginMinStride`` is ``INT_MAX`` if GIN connectivity
+      does not follow a uniform stride pattern, in which case :c:macro:`NCCL_GIN_CONNECTION_CUSTOM_STRIDE` cannot
+      be used. Available since NCCL 2.31.
+
 
 ncclGinType_t
 -------------
@@ -236,6 +244,12 @@ ncclGinType_t
       SpectrumX documentation for details. Added as an experimental
       feature in NCCL 2.30.6.
 
+   .. c:macro:: NCCL_GIN_TYPE_EFA_GDA
+
+      AWS EFA GPUDirect Async (GDA) GIN type. Requires the AWS OFI plugin for NCCL -
+      see AWS EFA `documentation <https://github.com/aws/aws-ofi-nccl>`_ for details.
+      Available since NCCL 2.31.
+
 ncclGinConnectionType_t
 -----------------------
 
@@ -256,6 +270,10 @@ ncclGinConnectionType_t
    .. c:macro:: NCCL_GIN_CONNECTION_RAIL
 
       Railed GIN connectivity. Each rank is connected to other ranks in the same rail team.
+
+   .. c:macro:: NCCL_GIN_CONNECTION_CUSTOM_STRIDE
+
+      Strided GIN connectivity. Each rank is connected to other ranks separated by a fixed stride. Available since NCCL 2.31.
 
 .. _device_api_host_functions:
 
