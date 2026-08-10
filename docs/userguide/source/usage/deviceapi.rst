@@ -32,8 +32,6 @@ GIN has the following requirements:
 
 * CUDA 12.2 or later when compiling the GPU code
 * NVIDIA GPUs: Volta or newer. NVIDIA GPU drivers >= 510.40.3
-* Network topology: Requires full NIC connectivity. Does not support topologies where NICs cannot communicate across rails. Also does not support ``NCCL_CROSS_NIC=0``.
-* Fused NICs are not supported. To use GIN on dual-port NICs, set ``NCCL_IB_MERGE_NICS=0``
 * Using GIN for buffers that are backed by multiple cuMem segments requires DMA-BUF
 
 The GIN **CPU Proxy** backend has the following requirements:
