@@ -361,7 +361,7 @@ In :c:type:`ncclDevCommRequirements`, :c:macro:`worldGinBarrierCount` reserves s
 in the launch grid (here ``NCCL_DEVICE_CTA_COUNT``), matching ``gridDim.x``, so each thread block uses
 ``blockIdx.x`` as its barrier index and signal index. GIN relies on these
 barriers and signals for cross-rank synchronization and for tracking asynchronous work. Set ``ginConnectionType`` to
-:c:macro:`NCCL_GIN_CONNECTION_FULL` to connect each rank to all peers (see :c:type:`ncclGinConnectionType_t`).
+:c:enumerator:`NCCL_GIN_CONNECTION_FULL <ncclGinConnectionType_t.NCCL_GIN_CONNECTION_FULL>` to connect each rank to all peers (see :c:enum:`ncclGinConnectionType_t`).
 :c:func:`ncclDevCommCreate` fails if GIN cannot be provided.
 
 On the device, GIN barriers synchronize across ranks over the network. Each thread block uses ``blockIdx.x`` to select its
@@ -414,7 +414,7 @@ the following as needed.
   :cpp:class:`ncclGinBarrierSession` with ``ncclTeamTagWorld()``.
 
 * **Before NCCL 2.29.7 — no** :c:member:`ginConnectionType` — Set :c:member:`ginForceEnable` to ``true`` to enable full GIN
-  connectivity (equivalent to :c:macro:`NCCL_GIN_CONNECTION_FULL` once :c:member:`ginConnectionType` exists). The
+  connectivity (equivalent to :c:enumerator:`NCCL_GIN_CONNECTION_FULL <ncclGinConnectionType_t.NCCL_GIN_CONNECTION_FULL>` once :c:member:`ginConnectionType` exists). The
   :c:member:`ginConnectionType` field is available starting with NCCL 2.29.7 (see :c:type:`ncclDevCommRequirements` in
   :ref:`device_api_setup`).
 
