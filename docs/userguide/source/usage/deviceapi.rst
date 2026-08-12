@@ -26,17 +26,31 @@ Requirements
 
 The device API relies on symmetric memory (see :ref:`window_reg`), which in turn depends on GPU virtual memory
 management (see :ref:`env_NCCL_CUMEM_ENABLE`) and optionally -- for multimem support -- on NVLink SHARP (see
-:ref:`env_NCCL_NVLS_ENABLE`).
+:ref:`env_NCCL_NVLS_ENABLE`). GIN supports muiltiple networking backends, each with their own set of requirements.
 
 GIN has the following requirements:
 
 * CUDA 12.2 or later when compiling the GPU code
 * NVIDIA GPUs: Volta or newer. NVIDIA GPU drivers >= 510.40.3
-* NVIDIA NICs: CX4 or newer. rdma-core >= 44.0
-* GPU Direct RDMA: GIN host proxy requires DMA-BUF or nvidia-peermem support. GIN GDAKI requires DMA-BUF with kernel version >= 6.1 or nvidia-peermem support
 * Network topology: Requires full NIC connectivity. Does not support topologies where NICs cannot communicate across rails. Also does not support ``NCCL_CROSS_NIC=0``.
 * Fused NICs are not supported. To use GIN on dual-port NICs, set ``NCCL_IB_MERGE_NICS=0``
 * Using GIN for buffers that are backed by multiple cuMem segments requires DMA-BUF
+
+The GIN **CPU Proxy** backend has the following requirements:
+
+* NVIDIA NICs: CX4 or newer
+* GPUDirect RDMA with the internal plugin:
+  * If using DMA-BUF, rdma-core >= 34.0.
+  * If using nvidia-peermem, Mellanox OFED >= 5.0 or DOCA.
+
+The GIN **GDAKI** backend has the following requirements:
+
+* NVIDIA NICs: CX4 or newer. rdma-core >= 44.0
+* GPU Direct RDMA:
+  * If using DMA-BUF, linux kernel >= 6.1.
+  * If using nvidia-peermem on baremetal, linux kernel >= 5.12 and either Mellanox OFED or DOCA driver.
+  * If using nvidia-peermem on virtualized environments, linux kernel >= 6.1 and either Mellanox OFED or DOCA driver.
+  * Mellanox OFED and DOCA driver packages may replace some parts of the upstream drivers. If you plan to install any of those packages, you need Mellanox OFED >= 5.8 or DOCA >= 3.1.0.
 
 When using host-backed buffers, the following additional limitations apply:
 
