@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# This code was automatically generated with version 2.30.7. Do not modify it directly.
+# This code was automatically generated with version 2.31.2. Do not modify it directly.
 
 
 
@@ -125,6 +125,14 @@ cdef void* __ncclAllGather = NULL
 cdef void* __ncclAlltoAll = NULL
 cdef void* __ncclGather = NULL
 cdef void* __ncclScatter = NULL
+cdef void* __ncclAllReduceConfig = NULL
+cdef void* __ncclBroadcastConfig = NULL
+cdef void* __ncclReduceConfig = NULL
+cdef void* __ncclAllGatherConfig = NULL
+cdef void* __ncclReduceScatterConfig = NULL
+cdef void* __ncclAlltoAllConfig = NULL
+cdef void* __ncclGatherConfig = NULL
+cdef void* __ncclScatterConfig = NULL
 cdef void* __ncclSend = NULL
 cdef void* __ncclRecv = NULL
 cdef void* __ncclPutSignal = NULL
@@ -154,8 +162,13 @@ cdef void* __ncclGetLsaMultimemDevicePointer = NULL
 cdef void* __ncclGetLsaDevicePointer = NULL
 cdef void* __ncclGetMultimemDevicePointer = NULL
 cdef void* __ncclGetPeerDevicePointer = NULL
+cdef void* __ncclGetMultimemDeviceLeInfo = NULL
+cdef void* __ncclGetCftDeviceLeInfo = NULL
+cdef void* __ncclGetPeerDeviceLeInfo = NULL
 cdef void* __ncclTeamWorld = NULL
 cdef void* __ncclTeamLsa = NULL
+cdef void* __ncclTeamCft = NULL
+cdef void* __ncclTeamCftMultimem = NULL
 cdef void* __ncclTeamRail = NULL
 cdef void* __ncclTeamRankToWorld = NULL
 cdef void* __ncclTeamRankToLsa = NULL
@@ -457,6 +470,62 @@ cdef int _init_nccl() except -1 nogil:
                 handle = load_library()
             __ncclScatter = _cyb_dlsym(handle, 'ncclScatter')
 
+        global __ncclAllReduceConfig
+        __ncclAllReduceConfig = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclAllReduceConfig')
+        if __ncclAllReduceConfig == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclAllReduceConfig = _cyb_dlsym(handle, 'ncclAllReduceConfig')
+
+        global __ncclBroadcastConfig
+        __ncclBroadcastConfig = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclBroadcastConfig')
+        if __ncclBroadcastConfig == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclBroadcastConfig = _cyb_dlsym(handle, 'ncclBroadcastConfig')
+
+        global __ncclReduceConfig
+        __ncclReduceConfig = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclReduceConfig')
+        if __ncclReduceConfig == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclReduceConfig = _cyb_dlsym(handle, 'ncclReduceConfig')
+
+        global __ncclAllGatherConfig
+        __ncclAllGatherConfig = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclAllGatherConfig')
+        if __ncclAllGatherConfig == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclAllGatherConfig = _cyb_dlsym(handle, 'ncclAllGatherConfig')
+
+        global __ncclReduceScatterConfig
+        __ncclReduceScatterConfig = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclReduceScatterConfig')
+        if __ncclReduceScatterConfig == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclReduceScatterConfig = _cyb_dlsym(handle, 'ncclReduceScatterConfig')
+
+        global __ncclAlltoAllConfig
+        __ncclAlltoAllConfig = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclAlltoAllConfig')
+        if __ncclAlltoAllConfig == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclAlltoAllConfig = _cyb_dlsym(handle, 'ncclAlltoAllConfig')
+
+        global __ncclGatherConfig
+        __ncclGatherConfig = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclGatherConfig')
+        if __ncclGatherConfig == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGatherConfig = _cyb_dlsym(handle, 'ncclGatherConfig')
+
+        global __ncclScatterConfig
+        __ncclScatterConfig = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclScatterConfig')
+        if __ncclScatterConfig == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclScatterConfig = _cyb_dlsym(handle, 'ncclScatterConfig')
+
         global __ncclSend
         __ncclSend = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclSend')
         if __ncclSend == NULL:
@@ -660,6 +729,27 @@ cdef int _init_nccl() except -1 nogil:
                 handle = load_library()
             __ncclGetPeerDevicePointer = _cyb_dlsym(handle, 'ncclGetPeerDevicePointer')
 
+        global __ncclGetMultimemDeviceLeInfo
+        __ncclGetMultimemDeviceLeInfo = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclGetMultimemDeviceLeInfo')
+        if __ncclGetMultimemDeviceLeInfo == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetMultimemDeviceLeInfo = _cyb_dlsym(handle, 'ncclGetMultimemDeviceLeInfo')
+
+        global __ncclGetCftDeviceLeInfo
+        __ncclGetCftDeviceLeInfo = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclGetCftDeviceLeInfo')
+        if __ncclGetCftDeviceLeInfo == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetCftDeviceLeInfo = _cyb_dlsym(handle, 'ncclGetCftDeviceLeInfo')
+
+        global __ncclGetPeerDeviceLeInfo
+        __ncclGetPeerDeviceLeInfo = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclGetPeerDeviceLeInfo')
+        if __ncclGetPeerDeviceLeInfo == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclGetPeerDeviceLeInfo = _cyb_dlsym(handle, 'ncclGetPeerDeviceLeInfo')
+
         global __ncclTeamWorld
         __ncclTeamWorld = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclTeamWorld')
         if __ncclTeamWorld == NULL:
@@ -673,6 +763,20 @@ cdef int _init_nccl() except -1 nogil:
             if handle == NULL:
                 handle = load_library()
             __ncclTeamLsa = _cyb_dlsym(handle, 'ncclTeamLsa')
+
+        global __ncclTeamCft
+        __ncclTeamCft = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclTeamCft')
+        if __ncclTeamCft == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclTeamCft = _cyb_dlsym(handle, 'ncclTeamCft')
+
+        global __ncclTeamCftMultimem
+        __ncclTeamCftMultimem = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclTeamCftMultimem')
+        if __ncclTeamCftMultimem == NULL:
+            if handle == NULL:
+                handle = load_library()
+            __ncclTeamCftMultimem = _cyb_dlsym(handle, 'ncclTeamCftMultimem')
 
         global __ncclTeamRail
         __ncclTeamRail = _cyb_dlsym(_cyb_RTLD_DEFAULT, 'ncclTeamRail')
@@ -863,6 +967,30 @@ cpdef dict _inspect_function_pointers():
     global __ncclScatter
     data["__ncclScatter"] = <intptr_t>__ncclScatter
 
+    global __ncclAllReduceConfig
+    data["__ncclAllReduceConfig"] = <intptr_t>__ncclAllReduceConfig
+
+    global __ncclBroadcastConfig
+    data["__ncclBroadcastConfig"] = <intptr_t>__ncclBroadcastConfig
+
+    global __ncclReduceConfig
+    data["__ncclReduceConfig"] = <intptr_t>__ncclReduceConfig
+
+    global __ncclAllGatherConfig
+    data["__ncclAllGatherConfig"] = <intptr_t>__ncclAllGatherConfig
+
+    global __ncclReduceScatterConfig
+    data["__ncclReduceScatterConfig"] = <intptr_t>__ncclReduceScatterConfig
+
+    global __ncclAlltoAllConfig
+    data["__ncclAlltoAllConfig"] = <intptr_t>__ncclAlltoAllConfig
+
+    global __ncclGatherConfig
+    data["__ncclGatherConfig"] = <intptr_t>__ncclGatherConfig
+
+    global __ncclScatterConfig
+    data["__ncclScatterConfig"] = <intptr_t>__ncclScatterConfig
+
     global __ncclSend
     data["__ncclSend"] = <intptr_t>__ncclSend
 
@@ -950,11 +1078,26 @@ cpdef dict _inspect_function_pointers():
     global __ncclGetPeerDevicePointer
     data["__ncclGetPeerDevicePointer"] = <intptr_t>__ncclGetPeerDevicePointer
 
+    global __ncclGetMultimemDeviceLeInfo
+    data["__ncclGetMultimemDeviceLeInfo"] = <intptr_t>__ncclGetMultimemDeviceLeInfo
+
+    global __ncclGetCftDeviceLeInfo
+    data["__ncclGetCftDeviceLeInfo"] = <intptr_t>__ncclGetCftDeviceLeInfo
+
+    global __ncclGetPeerDeviceLeInfo
+    data["__ncclGetPeerDeviceLeInfo"] = <intptr_t>__ncclGetPeerDeviceLeInfo
+
     global __ncclTeamWorld
     data["__ncclTeamWorld"] = <intptr_t>__ncclTeamWorld
 
     global __ncclTeamLsa
     data["__ncclTeamLsa"] = <intptr_t>__ncclTeamLsa
+
+    global __ncclTeamCft
+    data["__ncclTeamCft"] = <intptr_t>__ncclTeamCft
+
+    global __ncclTeamCftMultimem
+    data["__ncclTeamCftMultimem"] = <intptr_t>__ncclTeamCftMultimem
 
     global __ncclTeamRail
     data["__ncclTeamRail"] = <intptr_t>__ncclTeamRail
@@ -1436,6 +1579,86 @@ cdef ncclResult_t _ncclScatter(const void* sendbuff, void* recvbuff, size_t coun
         sendbuff, recvbuff, count, datatype, root, comm, stream)
 
 
+cdef ncclResult_t _ncclAllReduceConfig(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm, cudaStream_t stream, const ncclCollConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclAllReduceConfig
+    _check_or_init_nccl()
+    if __ncclAllReduceConfig == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclAllReduceConfig is not found")
+    return (<ncclResult_t (*)(const void*, void*, size_t, ncclDataType_t, ncclRedOp_t, ncclComm_t, cudaStream_t, const ncclCollConfig_t*) noexcept nogil>__ncclAllReduceConfig)(
+        sendbuff, recvbuff, count, datatype, op, comm, stream, config)
+
+
+cdef ncclResult_t _ncclBroadcastConfig(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream, const ncclCollConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclBroadcastConfig
+    _check_or_init_nccl()
+    if __ncclBroadcastConfig == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclBroadcastConfig is not found")
+    return (<ncclResult_t (*)(const void*, void*, size_t, ncclDataType_t, int, ncclComm_t, cudaStream_t, const ncclCollConfig_t*) noexcept nogil>__ncclBroadcastConfig)(
+        sendbuff, recvbuff, count, datatype, root, comm, stream, config)
+
+
+cdef ncclResult_t _ncclReduceConfig(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream, const ncclCollConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclReduceConfig
+    _check_or_init_nccl()
+    if __ncclReduceConfig == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclReduceConfig is not found")
+    return (<ncclResult_t (*)(const void*, void*, size_t, ncclDataType_t, ncclRedOp_t, int, ncclComm_t, cudaStream_t, const ncclCollConfig_t*) noexcept nogil>__ncclReduceConfig)(
+        sendbuff, recvbuff, count, datatype, op, root, comm, stream, config)
+
+
+cdef ncclResult_t _ncclAllGatherConfig(const void* sendbuff, void* recvbuff, size_t sendcount, ncclDataType_t datatype, ncclComm_t comm, cudaStream_t stream, const ncclCollConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclAllGatherConfig
+    _check_or_init_nccl()
+    if __ncclAllGatherConfig == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclAllGatherConfig is not found")
+    return (<ncclResult_t (*)(const void*, void*, size_t, ncclDataType_t, ncclComm_t, cudaStream_t, const ncclCollConfig_t*) noexcept nogil>__ncclAllGatherConfig)(
+        sendbuff, recvbuff, sendcount, datatype, comm, stream, config)
+
+
+cdef ncclResult_t _ncclReduceScatterConfig(const void* sendbuff, void* recvbuff, size_t recvcount, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm, cudaStream_t stream, const ncclCollConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclReduceScatterConfig
+    _check_or_init_nccl()
+    if __ncclReduceScatterConfig == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclReduceScatterConfig is not found")
+    return (<ncclResult_t (*)(const void*, void*, size_t, ncclDataType_t, ncclRedOp_t, ncclComm_t, cudaStream_t, const ncclCollConfig_t*) noexcept nogil>__ncclReduceScatterConfig)(
+        sendbuff, recvbuff, recvcount, datatype, op, comm, stream, config)
+
+
+cdef ncclResult_t _ncclAlltoAllConfig(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, ncclComm_t comm, cudaStream_t stream, const ncclCollConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclAlltoAllConfig
+    _check_or_init_nccl()
+    if __ncclAlltoAllConfig == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclAlltoAllConfig is not found")
+    return (<ncclResult_t (*)(const void*, void*, size_t, ncclDataType_t, ncclComm_t, cudaStream_t, const ncclCollConfig_t*) noexcept nogil>__ncclAlltoAllConfig)(
+        sendbuff, recvbuff, count, datatype, comm, stream, config)
+
+
+cdef ncclResult_t _ncclGatherConfig(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream, const ncclCollConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclGatherConfig
+    _check_or_init_nccl()
+    if __ncclGatherConfig == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclGatherConfig is not found")
+    return (<ncclResult_t (*)(const void*, void*, size_t, ncclDataType_t, int, ncclComm_t, cudaStream_t, const ncclCollConfig_t*) noexcept nogil>__ncclGatherConfig)(
+        sendbuff, recvbuff, count, datatype, root, comm, stream, config)
+
+
+cdef ncclResult_t _ncclScatterConfig(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype, int root, ncclComm_t comm, cudaStream_t stream, const ncclCollConfig_t* config) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclScatterConfig
+    _check_or_init_nccl()
+    if __ncclScatterConfig == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclScatterConfig is not found")
+    return (<ncclResult_t (*)(const void*, void*, size_t, ncclDataType_t, int, ncclComm_t, cudaStream_t, const ncclCollConfig_t*) noexcept nogil>__ncclScatterConfig)(
+        sendbuff, recvbuff, count, datatype, root, comm, stream, config)
+
+
 cdef ncclResult_t _ncclSend(const void* sendbuff, size_t count, ncclDataType_t datatype, int peer, ncclComm_t comm, cudaStream_t stream) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
     global __ncclSend
     _check_or_init_nccl()
@@ -1727,6 +1950,36 @@ cdef ncclResult_t _ncclGetPeerDevicePointer(ncclWindow_t window, size_t offset, 
         window, offset, peer, outPtr)
 
 
+cdef ncclResult_t _ncclGetMultimemDeviceLeInfo(ncclWindow_t window, size_t offset, ncclCftLeId* leId, size_t* leOffset) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclGetMultimemDeviceLeInfo
+    _check_or_init_nccl()
+    if __ncclGetMultimemDeviceLeInfo == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclGetMultimemDeviceLeInfo is not found")
+    return (<ncclResult_t (*)(ncclWindow_t, size_t, ncclCftLeId*, size_t*) noexcept nogil>__ncclGetMultimemDeviceLeInfo)(
+        window, offset, leId, leOffset)
+
+
+cdef ncclResult_t _ncclGetCftDeviceLeInfo(ncclWindow_t window, size_t offset, int peerCft, ncclTeam_t cftTeam, ncclCftLeId* leId, size_t* leOffset) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclGetCftDeviceLeInfo
+    _check_or_init_nccl()
+    if __ncclGetCftDeviceLeInfo == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclGetCftDeviceLeInfo is not found")
+    return (<ncclResult_t (*)(ncclWindow_t, size_t, int, ncclTeam_t, ncclCftLeId*, size_t*) noexcept nogil>__ncclGetCftDeviceLeInfo)(
+        window, offset, peerCft, cftTeam, leId, leOffset)
+
+
+cdef ncclResult_t _ncclGetPeerDeviceLeInfo(ncclWindow_t window, size_t offset, int peerWorld, ncclCftLeId* leId, size_t* leOffset) except?_NCCLRESULT_T_INTERNAL_LOADING_ERROR nogil:
+    global __ncclGetPeerDeviceLeInfo
+    _check_or_init_nccl()
+    if __ncclGetPeerDeviceLeInfo == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclGetPeerDeviceLeInfo is not found")
+    return (<ncclResult_t (*)(ncclWindow_t, size_t, int, ncclCftLeId*, size_t*) noexcept nogil>__ncclGetPeerDeviceLeInfo)(
+        window, offset, peerWorld, leId, leOffset)
+
+
 cdef ncclTeam_t _ncclTeamWorld(ncclComm_t comm) except* nogil:
     global __ncclTeamWorld
     _check_or_init_nccl()
@@ -1744,6 +1997,26 @@ cdef ncclTeam_t _ncclTeamLsa(ncclComm_t comm) except* nogil:
         with gil:
             raise FunctionNotFoundError("function ncclTeamLsa is not found")
     return (<ncclTeam_t (*)(ncclComm_t) noexcept nogil>__ncclTeamLsa)(
+        comm)
+
+
+cdef ncclTeam_t _ncclTeamCft(ncclComm_t comm, ncclCftTeamMode_t mode) except* nogil:
+    global __ncclTeamCft
+    _check_or_init_nccl()
+    if __ncclTeamCft == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclTeamCft is not found")
+    return (<ncclTeam_t (*)(ncclComm_t, ncclCftTeamMode_t) noexcept nogil>__ncclTeamCft)(
+        comm, mode)
+
+
+cdef ncclTeam_t _ncclTeamCftMultimem(ncclComm_t comm) except* nogil:
+    global __ncclTeamCftMultimem
+    _check_or_init_nccl()
+    if __ncclTeamCftMultimem == NULL:
+        with gil:
+            raise FunctionNotFoundError("function ncclTeamCftMultimem is not found")
+    return (<ncclTeam_t (*)(ncclComm_t) noexcept nogil>__ncclTeamCftMultimem)(
         comm)
 
 

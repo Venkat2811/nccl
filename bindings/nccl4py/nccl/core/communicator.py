@@ -391,7 +391,7 @@ def _materialize_resource_requirements(
             )
         elif isinstance(resource, LLA2ARequirement):
             handle = _nccl_bindings.LLA2AHandle()
-            n_slots = _nccl_bindings.lla2a_calc_slots(
+            n_slots = _nccl_bindings.ll_a2a_calc_slots(
                 resource.max_elements, resource.max_element_size
             )
             _nccl_bindings.ll_a2a_create_requirement(

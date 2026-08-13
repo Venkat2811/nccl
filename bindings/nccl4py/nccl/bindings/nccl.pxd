@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# This code was automatically generated with version 2.30.7. Do not modify it directly.
+# This code was automatically generated with version 2.31.2. Do not modify it directly.
 
 
 
@@ -39,6 +39,7 @@ cdef class PointerBox:
 ###############################################################################
 
 ctypedef ncclResult_t _Result
+ctypedef ncclHostCftMode_t _HostCftMode
 ctypedef ncclCommMemStat_t _CommMemStat
 ctypedef ncclRedOp_dummy_t _RedOpDummy
 ctypedef ncclRedOp_t _RedOp
@@ -46,6 +47,7 @@ ctypedef ncclDataType_t _DataType
 ctypedef ncclScalarResidence_t _ScalarResidence
 ctypedef ncclGinType_t _GinType
 ctypedef ncclGinConnectionType_t _GinConnectionType
+ctypedef ncclCftTeamMode_t _CftTeamMode
 
 
 ###############################################################################
@@ -93,6 +95,14 @@ cpdef all_gather(intptr_t sendbuff, intptr_t recvbuff, size_t sendcount, int dat
 cpdef allto_all(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, intptr_t comm, intptr_t stream)
 cpdef gather(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream)
 cpdef scatter(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream)
+cpdef all_reduce_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, intptr_t comm, intptr_t stream, intptr_t config)
+cpdef broadcast_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream, intptr_t config)
+cpdef reduce_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, int root, intptr_t comm, intptr_t stream, intptr_t config)
+cpdef all_gather_config(intptr_t sendbuff, intptr_t recvbuff, size_t sendcount, int datatype, intptr_t comm, intptr_t stream, intptr_t config)
+cpdef reduce_scatter_config(intptr_t sendbuff, intptr_t recvbuff, size_t recvcount, int datatype, int op, intptr_t comm, intptr_t stream, intptr_t config)
+cpdef allto_all_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, intptr_t comm, intptr_t stream, intptr_t config)
+cpdef gather_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream, intptr_t config)
+cpdef scatter_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream, intptr_t config)
 cpdef send(intptr_t sendbuff, size_t count, int datatype, int peer, intptr_t comm, intptr_t stream)
 cpdef recv(intptr_t recvbuff, size_t count, int datatype, int peer, intptr_t comm, intptr_t stream)
 cpdef put_signal(intptr_t localbuff, size_t count, int datatype, int peer, intptr_t peer_win, size_t peer_win_offset, int sig_idx, int ctx, unsigned int flags, intptr_t comm, intptr_t stream)
@@ -113,11 +123,18 @@ cpdef ll_a2a_create_requirement(int n_blocks, int n_slots, intptr_t out_handle, 
 cpdef object team_world(intptr_t comm)
 cpdef object team_lsa(intptr_t comm)
 cpdef object team_rail(intptr_t comm)
+cpdef object team_cft(intptr_t comm, int mode)
+cpdef object team_cft_multimem(intptr_t comm)
 cpdef int team_rank_to_world(intptr_t comm, intptr_t team, int rank)
 cpdef int team_rank_to_lsa(intptr_t comm, intptr_t team, int rank)
 cpdef lsa_barrier_create_requirement(intptr_t team, int n_barriers, intptr_t out_handle, intptr_t out_req)
 cpdef gin_barrier_create_requirement(intptr_t comm, intptr_t team, int n_barriers, intptr_t out_handle, intptr_t out_req)
 cpdef object get_library_path()
+
+# Hand-written: CFT logical-endpoint queries with two out-params.
+cpdef tuple get_multimem_device_le_info(intptr_t window, size_t offset)
+cpdef tuple get_cft_device_le_info(intptr_t window, size_t offset, int peer_cft, intptr_t cft_team)
+cpdef tuple get_peer_device_le_info(intptr_t window, size_t offset, int peer_world)
 
 # Hand-written: Param API (SKIP_LOWPP in nccl.cybind.yaml).
 cpdef str param_get_parameter(str key)
