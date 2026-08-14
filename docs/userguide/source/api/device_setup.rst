@@ -149,6 +149,18 @@ ncclDevCommRequirements
       do not use GIN VA signals (such as :cpp:struct:`ncclGin_WeakVASignalInc` and :cpp:struct:`ncclGin_StrongVASignalAdd`).
       Default is true. Available since NCCL 2.30.5.
 
+   .. c:member:: int cftCaps
+
+      Bitmask of CFT capabilities requested for the device communicator (see :ref:`device_api_cft`).
+      Set :c:macro:`NCCL_CFT` for unicast CFT logical endpoint support, :c:macro:`NCCL_CFT_MULTIMEM`
+      for multicast CFT support, :c:macro:`NCCL_CFT_NONE` for no CFT support (default).
+      Available since NCCL 2.31.
+
+   .. c:member:: int cftBarrierCount
+
+      Specifies the number of CFT barriers to allocate (see :cpp:class:`ncclCftBarrierSession`).
+      Available since NCCL 2.31.
+
 ncclCommQueryProperties
 -----------------------
 

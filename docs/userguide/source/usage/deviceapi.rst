@@ -18,6 +18,8 @@ Device API consists of the following modules:
  * **Multimem** -- for communication between devices using the hardware multicast feature provided by
    NVLink SHARP (available on some datacenter GPUs since the Hopper generation).
  * **GIN (GPU-Initiated Networking)** -- for communication over the network (since NCCL 2.28.7).
+ * **CFT (Compute Fabric Transport)** -- for communication through CUDA fabric logical endpoints
+   (since NCCL 2.31). See :ref:`usage_cft`.
  * **Reduce, Broadcast, and Fused Building Blocks** — Building Blocks for Computation-Fused Kernels: reduce, copy
    (broadcast), and reduce-then-copy (see :ref:`device_api_reducecopy` in the API reference).
 
@@ -60,6 +62,13 @@ When using host-backed buffers, the following additional limitations apply:
 Using the host RMA API requires CUDA 12.5 or greater.
 
 Building with EMIT_LLVM_IR=1 (to generate readable LLVM intermediate representation code) requires CUDA 12.
+
+CFT has the following requirements:
+
+* CUDA 13.3 or later when compiling the GPU code.
+* NVIDIA GPUs: Blackwell or newer. NVIDIA GPU drivers >= 610.43.02
+
+See :ref:`usage_cft` and :ref:`device_api_cft` for CFT setup and API details.
 
 Cross-Version Compatibility
 ----------------------------
@@ -226,12 +235,14 @@ Teams
 -----
 
 To address remote ranks or perform barriers, NCCL refers to subsets of ranks within a communicator as "teams".
-NCCL provides three predefined ones:
+NCCL provides five predefined ones:
 
  * ``ncclTeamWorld()`` -- the "world" team, encompassing all the ranks of a given communicator.
  * ``ncclTeamLsa()`` -- all the peers accessible from the local rank using load/store operations.
  * ``ncclTeamRail()`` -- the set of peers that have the same rank number within their LSA team (a rail team is
    orthogonal to an LSA team).
+ * ``ncclTeamCft()`` -- the CFT team for CUDA fabric logical endpoint unicast operations.
+ * ``ncclTeamCftMultimem()`` -- the CFT team for CUDA fabric logical endpoint multicast operations.
 
 The ``ncclTeam`` structure contains fairly self-explanatory elements ``nRanks``, ``rank``, and ``stride``. The device
 API contains functions to verify team membership, convert rank numbers between teams, etc. The world and LSA teams are
