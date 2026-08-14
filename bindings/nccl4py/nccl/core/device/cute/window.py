@@ -47,8 +47,10 @@ class Window:
                 "Window.__c_pointers__ is only available on a host-mode Window"
             )
         if not self._resource.is_valid:
-            raise RuntimeError("RegisteredWindowHandle has been closed")
-        return [self._resource._handle.address]
+            raise RuntimeError(
+                "RegisteredWindowHandle does not reference an active NCCL window"
+            )
+        return [self._resource._window.handle_ptr]
 
     @staticmethod
     def __get_mlir_types__() -> list[ir.Type]:

@@ -120,32 +120,6 @@ __version_code__ = (
 # POD
 ###############################################################################
 
-cdef class PointerBox:
-    """Stable storage for NCCL APIs that fill pointer outputs asynchronously."""
-
-    def __init__(self, intptr_t ptr=0):
-        self.ptr = ptr
-
-    def __int__(self):
-        return self.ptr
-
-    def __index__(self):
-        return self.ptr
-
-    def __bool__(self):
-        return self.ptr != 0
-
-    @property
-    def address(self):
-        return <intptr_t>&self.ptr
-
-    def __repr__(self):
-        return f"<PointerBox ptr={self.ptr:#x}>"
-
-    def __format__(self, format_spec):
-        return format(self.ptr, format_spec)
-
-
 cdef _get_unique_id_dtype_offsets():
     cdef ncclUniqueId pod
     return _numpy.dtype({
@@ -4719,6 +4693,104 @@ cdef class DevCommRequirements:
         return obj
 
 
+cdef class Comm:
+    cdef ncclComm_t _handle
+    cdef ncclComm_t* _handle_ptr
+    cdef object _owner
+
+    def __cinit__(self, *args, **kwargs):
+        self._handle_ptr = &self._handle
+
+    def __init__(self, intptr_t handle=0):
+        self._handle = <ncclComm_t>handle
+        self._handle_ptr = &self._handle
+        self._owner = None
+
+    @property
+    def handle(self):
+        """Get the current handle value as a Python :class:`int`."""
+        return <intptr_t>self._handle_ptr[0]
+
+    @property
+    def handle_ptr(self):
+        """Get the handle slot address as a Python :class:`int`."""
+        return <intptr_t>self._handle_ptr
+
+    cdef ncclComm_t _get_handle(self):
+        return self._handle_ptr[0]
+
+    cdef ncclComm_t* _get_handle_ptr(self):
+        return self._handle_ptr
+
+    @staticmethod
+    cdef Comm _from_handle_ptr(ncclComm_t* handle_ptr, object owner):
+        cdef Comm obj = Comm.__new__(Comm)
+        obj._handle_ptr = handle_ptr
+        obj._owner = owner
+        return obj
+
+    def __int__(self):
+        return <intptr_t>self._handle_ptr[0]
+
+    def __index__(self):
+        return <intptr_t>self._handle_ptr[0]
+
+    def __bool__(self):
+        return self._handle_ptr[0] != NULL
+
+    def __repr__(self):
+        return f"<{__name__}.Comm handle={self.handle:#x} object at {hex(id(self))}>"
+
+
+cdef class Window:
+    cdef ncclWindow_t _handle
+    cdef ncclWindow_t* _handle_ptr
+    cdef object _owner
+
+    def __cinit__(self, *args, **kwargs):
+        self._handle_ptr = &self._handle
+
+    def __init__(self, intptr_t handle=0):
+        self._handle = <ncclWindow_t>handle
+        self._handle_ptr = &self._handle
+        self._owner = None
+
+    @property
+    def handle(self):
+        """Get the current handle value as a Python :class:`int`."""
+        return <intptr_t>self._handle_ptr[0]
+
+    @property
+    def handle_ptr(self):
+        """Get the handle slot address as a Python :class:`int`."""
+        return <intptr_t>self._handle_ptr
+
+    cdef ncclWindow_t _get_handle(self):
+        return self._handle_ptr[0]
+
+    cdef ncclWindow_t* _get_handle_ptr(self):
+        return self._handle_ptr
+
+    @staticmethod
+    cdef Window _from_handle_ptr(ncclWindow_t* handle_ptr, object owner):
+        cdef Window obj = Window.__new__(Window)
+        obj._handle_ptr = handle_ptr
+        obj._owner = owner
+        return obj
+
+    def __int__(self):
+        return <intptr_t>self._handle_ptr[0]
+
+    def __index__(self):
+        return <intptr_t>self._handle_ptr[0]
+
+    def __bool__(self):
+        return self._handle_ptr[0] != NULL
+
+    def __repr__(self):
+        return f"<{__name__}.Window handle={self.handle:#x} object at {hex(id(self))}>"
+
+
 ###############################################################################
 # Enum
 ###############################################################################
@@ -4890,109 +4962,126 @@ cpdef object get_unique_id():
     return unique_id_py
 
 
-cpdef int comm_init_rank_config(comm, int nranks, comm_id, int rank, intptr_t config) except? -1:
-    cdef intptr_t _comm_ = comm
+cpdef object comm_init_rank_config(int nranks, comm_id, int rank, intptr_t config):
     cdef void* _comm_id_ = <void *>_cyb_get_buffer_pointer(comm_id, -1, readonly=False)
-    cdef int ret
+    cdef Comm comm_py = Comm()
+    cdef ncclComm_t *comm = comm_py._get_handle_ptr()
     with nogil:
-        ret = <int>ncclCommInitRankConfig(<Comm*>_comm_, nranks, (<ncclUniqueId*>(_comm_id_))[0], rank, <ncclConfig_t*>config)
-    check_status(ret)
-    return ret
+        __status__ = ncclCommInitRankConfig(comm, nranks, (<ncclUniqueId*>(_comm_id_))[0], rank, <ncclConfig_t*>config)
+    check_status(__status__)
+    return comm_py
 
 
-cpdef int comm_init_rank(comm, int nranks, comm_id, int rank) except? -1:
-    cdef intptr_t _comm_ = comm
+cpdef object comm_init_rank(int nranks, comm_id, int rank):
     cdef void* _comm_id_ = <void *>_cyb_get_buffer_pointer(comm_id, -1, readonly=False)
-    cdef int ret
+    cdef Comm comm_py = Comm()
+    cdef ncclComm_t *comm = comm_py._get_handle_ptr()
     with nogil:
-        ret = <int>ncclCommInitRank(<Comm*>_comm_, nranks, (<ncclUniqueId*>(_comm_id_))[0], rank)
-    check_status(ret)
-    return ret
+        __status__ = ncclCommInitRank(comm, nranks, (<ncclUniqueId*>(_comm_id_))[0], rank)
+    check_status(__status__)
+    return comm_py
 
 
 cpdef object comm_init_all(int ndev, devlist):
     cdef nullable_unique_ptr[ vector[int] ] _devlist_
     get_resource_ptr[int](_devlist_, devlist, <int*>NULL)
     if ndev == 0:
-        return _cyb_view.array(shape=(1,), itemsize=sizeof(intptr_t), format="q", mode="c")[:0]
+        return []
     cdef _cyb_view.array comm = _cyb_view.array(shape=(ndev,), itemsize=sizeof(intptr_t), format="q", mode="c")
     cdef intptr_t *comm_ptr = <intptr_t *>(comm.data)
+    cdef list comm_wrappers = []
+    cdef Py_ssize_t comm_index
+    for comm_index in range(ndev):
+        comm_wrappers.append(
+            Comm._from_handle_ptr(
+                <ncclComm_t*>(comm_ptr + comm_index),
+                comm,
+            )
+        )
     with nogil:
         __status__ = ncclCommInitAll(<ncclComm_t*>comm_ptr, ndev, <const int*>(_devlist_.data()))
     check_status(__status__)
-    return comm
+    return comm_wrappers
 
 
-cpdef comm_finalize(intptr_t comm):
+cpdef comm_finalize(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclCommFinalize(<Comm>comm)
+        __status__ = ncclCommFinalize(_comm_handle)
     check_status(__status__)
 
 
-cpdef comm_destroy(intptr_t comm):
+cpdef comm_destroy(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclCommDestroy(<Comm>comm)
+        __status__ = ncclCommDestroy(_comm_handle)
     check_status(__status__)
 
 
-cpdef comm_abort(intptr_t comm):
+cpdef comm_abort(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclCommAbort(<Comm>comm)
+        __status__ = ncclCommAbort(_comm_handle)
     check_status(__status__)
 
 
-cpdef comm_revoke(intptr_t comm, int revoke_flags):
+cpdef comm_revoke(object comm, int revoke_flags):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclCommRevoke(<Comm>comm, revoke_flags)
+        __status__ = ncclCommRevoke(_comm_handle, revoke_flags)
     check_status(__status__)
 
 
-cpdef int comm_split(intptr_t comm, int color, int key, newcomm, intptr_t config) except? -1:
-    cdef intptr_t _newcomm_ = newcomm
-    cdef int ret
+cpdef object comm_split(object comm, int color, int key, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
+    cdef Comm newcomm_py = Comm()
+    cdef ncclComm_t *newcomm = newcomm_py._get_handle_ptr()
     with nogil:
-        ret = <int>ncclCommSplit(<Comm>comm, color, key, <Comm*>_newcomm_, <ncclConfig_t*>config)
-    check_status(ret)
-    return ret
+        __status__ = ncclCommSplit(_comm_handle, color, key, newcomm, <ncclConfig_t*>config)
+    check_status(__status__)
+    return newcomm_py
 
 
-cpdef int comm_shrink(intptr_t comm, exclude_ranks_list, int exclude_ranks_count, newcomm, intptr_t config, int shrink_flags) except? -1:
+cpdef object comm_shrink(object comm, exclude_ranks_list, int exclude_ranks_count, intptr_t config, int shrink_flags):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef nullable_unique_ptr[ vector[int] ] _exclude_ranks_list_
     get_resource_ptr[int](_exclude_ranks_list_, exclude_ranks_list, <int*>NULL)
-    cdef intptr_t _newcomm_ = newcomm
-    cdef int ret
+    cdef Comm newcomm_py = Comm()
+    cdef ncclComm_t *newcomm = newcomm_py._get_handle_ptr()
     with nogil:
-        ret = <int>ncclCommShrink(<Comm>comm, <int*>(_exclude_ranks_list_.data()), exclude_ranks_count, <Comm*>_newcomm_, <ncclConfig_t*>config, shrink_flags)
-    check_status(ret)
-    return ret
+        __status__ = ncclCommShrink(_comm_handle, <int*>(_exclude_ranks_list_.data()), exclude_ranks_count, newcomm, <ncclConfig_t*>config, shrink_flags)
+    check_status(__status__)
+    return newcomm_py
 
 
-cpdef object comm_get_unique_id(intptr_t comm):
+cpdef object comm_get_unique_id(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef UniqueId unique_id_py = UniqueId()
     cdef ncclUniqueId *unique_id = <ncclUniqueId *><intptr_t>(unique_id_py._get_ptr())
     with nogil:
-        __status__ = ncclCommGetUniqueId(<Comm>comm, unique_id)
+        __status__ = ncclCommGetUniqueId(_comm_handle, unique_id)
     check_status(__status__)
     return unique_id_py
 
 
-cpdef int comm_grow(intptr_t comm, int n_ranks, intptr_t unique_id, int rank, newcomm, intptr_t config) except? -1:
-    cdef intptr_t _newcomm_ = newcomm
-    cdef int ret
+cpdef object comm_grow(object comm, int n_ranks, intptr_t unique_id, int rank, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
+    cdef Comm newcomm_py = Comm()
+    cdef ncclComm_t *newcomm = newcomm_py._get_handle_ptr()
     with nogil:
-        ret = <int>ncclCommGrow(<Comm>comm, n_ranks, <const ncclUniqueId*>unique_id, rank, <Comm*>_newcomm_, <ncclConfig_t*>config)
-    check_status(ret)
-    return ret
+        __status__ = ncclCommGrow(_comm_handle, n_ranks, <const ncclUniqueId*>unique_id, rank, newcomm, <ncclConfig_t*>config)
+    check_status(__status__)
+    return newcomm_py
 
 
-cpdef int comm_init_rank_scalable(newcomm, int nranks, int myrank, int n_id, comm_ids, intptr_t config) except? -1:
-    cdef intptr_t _newcomm_ = newcomm
+cpdef object comm_init_rank_scalable(int nranks, int myrank, int n_id, comm_ids, intptr_t config):
     cdef void* _comm_ids_ = <void *>_cyb_get_buffer_pointer(comm_ids, -1, readonly=False)
-    cdef int ret
+    cdef Comm newcomm_py = Comm()
+    cdef ncclComm_t *newcomm = newcomm_py._get_handle_ptr()
     with nogil:
-        ret = <int>ncclCommInitRankScalable(<Comm*>_newcomm_, nranks, myrank, n_id, <ncclUniqueId*>_comm_ids_, <ncclConfig_t*>config)
-    check_status(ret)
-    return ret
+        __status__ = ncclCommInitRankScalable(newcomm, nranks, myrank, n_id, <ncclUniqueId*>_comm_ids_, <ncclConfig_t*>config)
+    check_status(__status__)
+    return newcomm_py
 
 
 cpdef str get_error_string(int result):
@@ -5004,248 +5093,288 @@ cpdef str get_error_string(int result):
     return _output_.decode()
 
 
-cpdef str get_last_error(intptr_t comm):
+cpdef str get_last_error(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef const char *_output_cstr_
     cdef bytes _output_
     with nogil:
-        _output_cstr_ = ncclGetLastError(<Comm>comm)
+        _output_cstr_ = ncclGetLastError(_comm_handle)
     _output_ = _output_cstr_
     return _output_.decode()
 
 
-cpdef int comm_get_async_error(intptr_t comm) except? -1:
+cpdef int comm_get_async_error(object comm) except? -1:
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef _Result async_error
     with nogil:
-        __status__ = ncclCommGetAsyncError(<Comm>comm, &async_error)
+        __status__ = ncclCommGetAsyncError(_comm_handle, &async_error)
     check_status(__status__)
     return <int>async_error
 
 
-cpdef int comm_count(intptr_t comm) except? -1:
+cpdef int comm_count(object comm) except? -1:
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef int count
     with nogil:
-        __status__ = ncclCommCount(<const Comm>comm, &count)
+        __status__ = ncclCommCount(_comm_handle, &count)
     check_status(__status__)
     return count
 
 
-cpdef int comm_cu_device(intptr_t comm) except? -1:
+cpdef int comm_cu_device(object comm) except? -1:
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef int device
     with nogil:
-        __status__ = ncclCommCuDevice(<const Comm>comm, &device)
+        __status__ = ncclCommCuDevice(_comm_handle, &device)
     check_status(__status__)
     return device
 
 
-cpdef int comm_user_rank(intptr_t comm) except? -1:
+cpdef int comm_user_rank(object comm) except? -1:
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef int rank
     with nogil:
-        __status__ = ncclCommUserRank(<const Comm>comm, &rank)
+        __status__ = ncclCommUserRank(_comm_handle, &rank)
     check_status(__status__)
     return rank
 
 
-cpdef intptr_t comm_register(intptr_t comm, intptr_t buff, size_t size) except? 0:
+cpdef intptr_t comm_register(object comm, intptr_t buff, size_t size) except? 0:
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef void* handle
     with nogil:
-        __status__ = ncclCommRegister(<const Comm>comm, <void*>buff, size, &handle)
+        __status__ = ncclCommRegister(_comm_handle, <void*>buff, size, &handle)
     check_status(__status__)
     return <intptr_t>handle
 
 
-cpdef comm_deregister(intptr_t comm, intptr_t handle):
+cpdef comm_deregister(object comm, intptr_t handle):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclCommDeregister(<const Comm>comm, <void*>handle)
+        __status__ = ncclCommDeregister(_comm_handle, <void*>handle)
     check_status(__status__)
 
 
-cpdef comm_suspend(intptr_t comm, int flags):
+cpdef comm_suspend(object comm, int flags):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclCommSuspend(<Comm>comm, flags)
+        __status__ = ncclCommSuspend(_comm_handle, flags)
     check_status(__status__)
 
 
-cpdef comm_resume(intptr_t comm):
+cpdef comm_resume(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclCommResume(<Comm>comm)
+        __status__ = ncclCommResume(_comm_handle)
     check_status(__status__)
 
 
-cpdef uint64_t comm_mem_stats(intptr_t comm, int stat) except? -1:
+cpdef uint64_t comm_mem_stats(object comm, int stat) except? -1:
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef uint64_t value
     with nogil:
-        __status__ = ncclCommMemStats(<Comm>comm, <_CommMemStat>stat, &value)
+        __status__ = ncclCommMemStats(_comm_handle, <_CommMemStat>stat, &value)
     check_status(__status__)
     return value
 
 
-cpdef int comm_window_register(intptr_t comm, intptr_t buff, size_t size, win, int win_flags) except? -1:
-    cdef intptr_t _win_ = win
-    cdef int ret
+cpdef object comm_window_register(object comm, intptr_t buff, size_t size, int win_flags):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
+    cdef Window win_py = Window()
+    cdef ncclWindow_t *win = win_py._get_handle_ptr()
     with nogil:
-        ret = <int>ncclCommWindowRegister(<Comm>comm, <void*>buff, size, <Window*>_win_, win_flags)
-    check_status(ret)
-    return ret
+        __status__ = ncclCommWindowRegister(_comm_handle, <void*>buff, size, win, win_flags)
+    check_status(__status__)
+    return win_py
 
 
-cpdef comm_window_deregister(intptr_t comm, intptr_t win):
+cpdef comm_window_deregister(object comm, object win):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
+    cdef ncclWindow_t _win_handle = (<Window?>win)._get_handle()
     with nogil:
-        __status__ = ncclCommWindowDeregister(<Comm>comm, <Window>win)
+        __status__ = ncclCommWindowDeregister(_comm_handle, _win_handle)
     check_status(__status__)
 
 
-cpdef intptr_t win_get_user_ptr(intptr_t comm, intptr_t win) except? 0:
+cpdef intptr_t win_get_user_ptr(object comm, object win) except? 0:
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
+    cdef ncclWindow_t _win_handle = (<Window?>win)._get_handle()
     cdef void* out_user_ptr
     with nogil:
-        __status__ = ncclWinGetUserPtr(<Comm>comm, <Window>win, &out_user_ptr)
+        __status__ = ncclWinGetUserPtr(_comm_handle, _win_handle, &out_user_ptr)
     check_status(__status__)
     return <intptr_t>out_user_ptr
 
 
-cpdef int red_op_create_pre_mul_sum(intptr_t scalar, int datatype, int residence, intptr_t comm) except? -1:
+cpdef int red_op_create_pre_mul_sum(intptr_t scalar, int datatype, int residence, object comm) except? -1:
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef _RedOp op
     with nogil:
-        __status__ = ncclRedOpCreatePreMulSum(&op, <void*>scalar, <_DataType>datatype, <_ScalarResidence>residence, <Comm>comm)
+        __status__ = ncclRedOpCreatePreMulSum(&op, <void*>scalar, <_DataType>datatype, <_ScalarResidence>residence, _comm_handle)
     check_status(__status__)
     return <int>op
 
 
-cpdef red_op_destroy(int op, intptr_t comm):
+cpdef red_op_destroy(int op, object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclRedOpDestroy(<_RedOp>op, <Comm>comm)
+        __status__ = ncclRedOpDestroy(<_RedOp>op, _comm_handle)
     check_status(__status__)
 
 
-cpdef reduce(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, int root, intptr_t comm, intptr_t stream):
+cpdef reduce(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, int root, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclReduce(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, root, <Comm>comm, <Stream>stream)
+        __status__ = ncclReduce(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, root, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef bcast(intptr_t buff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream):
+cpdef bcast(intptr_t buff, size_t count, int datatype, int root, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclBcast(<void*>buff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
+        __status__ = ncclBcast(<void*>buff, count, <_DataType>datatype, root, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef broadcast(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream):
+cpdef broadcast(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclBroadcast(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
+        __status__ = ncclBroadcast(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef all_reduce(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, intptr_t comm, intptr_t stream):
+cpdef all_reduce(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclAllReduce(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, <Comm>comm, <Stream>stream)
+        __status__ = ncclAllReduce(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef reduce_scatter(intptr_t sendbuff, intptr_t recvbuff, size_t recvcount, int datatype, int op, intptr_t comm, intptr_t stream):
+cpdef reduce_scatter(intptr_t sendbuff, intptr_t recvbuff, size_t recvcount, int datatype, int op, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclReduceScatter(<const void*>sendbuff, <void*>recvbuff, recvcount, <_DataType>datatype, <_RedOp>op, <Comm>comm, <Stream>stream)
+        __status__ = ncclReduceScatter(<const void*>sendbuff, <void*>recvbuff, recvcount, <_DataType>datatype, <_RedOp>op, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef all_gather(intptr_t sendbuff, intptr_t recvbuff, size_t sendcount, int datatype, intptr_t comm, intptr_t stream):
+cpdef all_gather(intptr_t sendbuff, intptr_t recvbuff, size_t sendcount, int datatype, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclAllGather(<const void*>sendbuff, <void*>recvbuff, sendcount, <_DataType>datatype, <Comm>comm, <Stream>stream)
+        __status__ = ncclAllGather(<const void*>sendbuff, <void*>recvbuff, sendcount, <_DataType>datatype, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef allto_all(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, intptr_t comm, intptr_t stream):
+cpdef allto_all(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclAlltoAll(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <Comm>comm, <Stream>stream)
+        __status__ = ncclAlltoAll(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef gather(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream):
+cpdef gather(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclGather(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
+        __status__ = ncclGather(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef scatter(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream):
+cpdef scatter(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclScatter(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream)
+        __status__ = ncclScatter(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef all_reduce_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, intptr_t comm, intptr_t stream, intptr_t config):
+cpdef all_reduce_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, object comm, intptr_t stream, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclAllReduceConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, <Comm>comm, <Stream>stream, <const ncclCollConfig_t*>config)
+        __status__ = ncclAllReduceConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, _comm_handle, <Stream>stream, <const ncclCollConfig_t*>config)
     check_status(__status__)
 
 
-cpdef broadcast_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream, intptr_t config):
+cpdef broadcast_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, object comm, intptr_t stream, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclBroadcastConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream, <const ncclCollConfig_t*>config)
+        __status__ = ncclBroadcastConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, _comm_handle, <Stream>stream, <const ncclCollConfig_t*>config)
     check_status(__status__)
 
 
-cpdef reduce_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, int root, intptr_t comm, intptr_t stream, intptr_t config):
+cpdef reduce_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int op, int root, object comm, intptr_t stream, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclReduceConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, root, <Comm>comm, <Stream>stream, <const ncclCollConfig_t*>config)
+        __status__ = ncclReduceConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <_RedOp>op, root, _comm_handle, <Stream>stream, <const ncclCollConfig_t*>config)
     check_status(__status__)
 
 
-cpdef all_gather_config(intptr_t sendbuff, intptr_t recvbuff, size_t sendcount, int datatype, intptr_t comm, intptr_t stream, intptr_t config):
+cpdef all_gather_config(intptr_t sendbuff, intptr_t recvbuff, size_t sendcount, int datatype, object comm, intptr_t stream, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclAllGatherConfig(<const void*>sendbuff, <void*>recvbuff, sendcount, <_DataType>datatype, <Comm>comm, <Stream>stream, <const ncclCollConfig_t*>config)
+        __status__ = ncclAllGatherConfig(<const void*>sendbuff, <void*>recvbuff, sendcount, <_DataType>datatype, _comm_handle, <Stream>stream, <const ncclCollConfig_t*>config)
     check_status(__status__)
 
 
-cpdef reduce_scatter_config(intptr_t sendbuff, intptr_t recvbuff, size_t recvcount, int datatype, int op, intptr_t comm, intptr_t stream, intptr_t config):
+cpdef reduce_scatter_config(intptr_t sendbuff, intptr_t recvbuff, size_t recvcount, int datatype, int op, object comm, intptr_t stream, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclReduceScatterConfig(<const void*>sendbuff, <void*>recvbuff, recvcount, <_DataType>datatype, <_RedOp>op, <Comm>comm, <Stream>stream, <const ncclCollConfig_t*>config)
+        __status__ = ncclReduceScatterConfig(<const void*>sendbuff, <void*>recvbuff, recvcount, <_DataType>datatype, <_RedOp>op, _comm_handle, <Stream>stream, <const ncclCollConfig_t*>config)
     check_status(__status__)
 
 
-cpdef allto_all_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, intptr_t comm, intptr_t stream, intptr_t config):
+cpdef allto_all_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, object comm, intptr_t stream, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclAlltoAllConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, <Comm>comm, <Stream>stream, <const ncclCollConfig_t*>config)
+        __status__ = ncclAlltoAllConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, _comm_handle, <Stream>stream, <const ncclCollConfig_t*>config)
     check_status(__status__)
 
 
-cpdef gather_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream, intptr_t config):
+cpdef gather_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, object comm, intptr_t stream, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclGatherConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream, <const ncclCollConfig_t*>config)
+        __status__ = ncclGatherConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, _comm_handle, <Stream>stream, <const ncclCollConfig_t*>config)
     check_status(__status__)
 
 
-cpdef scatter_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, intptr_t comm, intptr_t stream, intptr_t config):
+cpdef scatter_config(intptr_t sendbuff, intptr_t recvbuff, size_t count, int datatype, int root, object comm, intptr_t stream, intptr_t config):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclScatterConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, <Comm>comm, <Stream>stream, <const ncclCollConfig_t*>config)
+        __status__ = ncclScatterConfig(<const void*>sendbuff, <void*>recvbuff, count, <_DataType>datatype, root, _comm_handle, <Stream>stream, <const ncclCollConfig_t*>config)
     check_status(__status__)
 
 
-cpdef send(intptr_t sendbuff, size_t count, int datatype, int peer, intptr_t comm, intptr_t stream):
+cpdef send(intptr_t sendbuff, size_t count, int datatype, int peer, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclSend(<const void*>sendbuff, count, <_DataType>datatype, peer, <Comm>comm, <Stream>stream)
+        __status__ = ncclSend(<const void*>sendbuff, count, <_DataType>datatype, peer, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef recv(intptr_t recvbuff, size_t count, int datatype, int peer, intptr_t comm, intptr_t stream):
+cpdef recv(intptr_t recvbuff, size_t count, int datatype, int peer, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclRecv(<void*>recvbuff, count, <_DataType>datatype, peer, <Comm>comm, <Stream>stream)
+        __status__ = ncclRecv(<void*>recvbuff, count, <_DataType>datatype, peer, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef put_signal(intptr_t localbuff, size_t count, int datatype, int peer, intptr_t peer_win, size_t peer_win_offset, int sig_idx, int ctx, unsigned int flags, intptr_t comm, intptr_t stream):
+cpdef put_signal(intptr_t localbuff, size_t count, int datatype, int peer, object peer_win, size_t peer_win_offset, int sig_idx, int ctx, unsigned int flags, object comm, intptr_t stream):
+    cdef ncclWindow_t _peer_win_handle = (<Window?>peer_win)._get_handle()
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclPutSignal(<const void*>localbuff, count, <_DataType>datatype, peer, <Window>peer_win, peer_win_offset, sig_idx, ctx, flags, <Comm>comm, <Stream>stream)
+        __status__ = ncclPutSignal(<const void*>localbuff, count, <_DataType>datatype, peer, _peer_win_handle, peer_win_offset, sig_idx, ctx, flags, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef signal(int peer, int sig_idx, int ctx, unsigned int flags, intptr_t comm, intptr_t stream):
+cpdef signal(int peer, int sig_idx, int ctx, unsigned int flags, object comm, intptr_t stream):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclSignal(peer, sig_idx, ctx, flags, <Comm>comm, <Stream>stream)
+        __status__ = ncclSignal(peer, sig_idx, ctx, flags, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
-cpdef wait_signal(int n_desc, signal_descs, intptr_t comm, intptr_t stream):
+cpdef wait_signal(int n_desc, signal_descs, object comm, intptr_t stream):
     cdef void* _signal_descs_ = <void *>_cyb_get_buffer_pointer(signal_descs, -1, readonly=False)
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclWaitSignal(n_desc, <ncclWaitSignalDesc_t*>_signal_descs_, <Comm>comm, <Stream>stream)
+        __status__ = ncclWaitSignal(n_desc, <ncclWaitSignalDesc_t*>_signal_descs_, _comm_handle, <Stream>stream)
     check_status(__status__)
 
 
@@ -5270,50 +5399,56 @@ cpdef object group_simulate_end():
     return sim_info_py
 
 
-cpdef object comm_query_properties(intptr_t comm):
+cpdef object comm_query_properties(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef CommProperties props_py = CommProperties()
     cdef ncclCommProperties_t *props = <ncclCommProperties_t *><intptr_t>(props_py._get_ptr())
     with nogil:
-        __status__ = ncclCommQueryProperties(<Comm>comm, props)
+        __status__ = ncclCommQueryProperties(_comm_handle, props)
     check_status(__status__)
     return props_py
 
 
-cpdef object dev_comm_create(intptr_t comm, intptr_t reqs):
+cpdef object dev_comm_create(object comm, intptr_t reqs):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef DevComm out_dev_comm_py = DevComm()
     cdef ncclDevComm_t *out_dev_comm = <ncclDevComm_t *><intptr_t>(out_dev_comm_py._get_ptr())
     with nogil:
-        __status__ = ncclDevCommCreate(<Comm>comm, <const ncclDevCommRequirements_t*>reqs, out_dev_comm)
+        __status__ = ncclDevCommCreate(_comm_handle, <const ncclDevCommRequirements_t*>reqs, out_dev_comm)
     check_status(__status__)
     return out_dev_comm_py
 
 
-cpdef dev_comm_destroy(intptr_t comm, intptr_t dev_comm):
+cpdef dev_comm_destroy(object comm, intptr_t dev_comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
-        __status__ = ncclDevCommDestroy(<Comm>comm, <const ncclDevComm_t*>dev_comm)
+        __status__ = ncclDevCommDestroy(_comm_handle, <const ncclDevComm_t*>dev_comm)
     check_status(__status__)
 
 
-cpdef intptr_t get_lsa_multimem_device_pointer(intptr_t window, size_t offset) except? 0:
+cpdef intptr_t get_lsa_multimem_device_pointer(object window, size_t offset) except? 0:
+    cdef ncclWindow_t _window_handle = (<Window?>window)._get_handle()
     cdef void* out_ptr
     with nogil:
-        __status__ = ncclGetLsaMultimemDevicePointer(<Window>window, offset, &out_ptr)
-    check_status(__status__)
-    return <intptr_t>out_ptr
-
-
-cpdef intptr_t get_lsa_device_pointer(intptr_t window, size_t offset, int lsa_rank) except? 0:
-    cdef void* out_ptr
-    with nogil:
-        __status__ = ncclGetLsaDevicePointer(<Window>window, offset, lsa_rank, &out_ptr)
+        __status__ = ncclGetLsaMultimemDevicePointer(_window_handle, offset, &out_ptr)
     check_status(__status__)
     return <intptr_t>out_ptr
 
 
-cpdef intptr_t get_peer_device_pointer(intptr_t window, size_t offset, int peer) except? 0:
+cpdef intptr_t get_lsa_device_pointer(object window, size_t offset, int lsa_rank) except? 0:
+    cdef ncclWindow_t _window_handle = (<Window?>window)._get_handle()
     cdef void* out_ptr
     with nogil:
-        __status__ = ncclGetPeerDevicePointer(<Window>window, offset, peer, &out_ptr)
+        __status__ = ncclGetLsaDevicePointer(_window_handle, offset, lsa_rank, &out_ptr)
+    check_status(__status__)
+    return <intptr_t>out_ptr
+
+
+cpdef intptr_t get_peer_device_pointer(object window, size_t offset, int peer) except? 0:
+    cdef ncclWindow_t _window_handle = (<Window?>window)._get_handle()
+    cdef void* out_ptr
+    with nogil:
+        __status__ = ncclGetPeerDevicePointer(_window_handle, offset, peer, &out_ptr)
     check_status(__status__)
     return <intptr_t>out_ptr
 
@@ -5327,60 +5462,67 @@ cpdef ll_a2a_create_requirement(int n_blocks, int n_slots, intptr_t out_handle, 
 
 # Hand-written: cybind cannot emit by-value struct returns (ncclTeam_t).
 
-cpdef object team_world(intptr_t comm):
+cpdef object team_world(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef Team team_py = Team()
     cdef ncclTeam_t *team = <ncclTeam_t *><intptr_t>(team_py._get_ptr())
     with nogil:
-        team[0] = ncclTeamWorld(<Comm>comm)
+        team[0] = ncclTeamWorld(_comm_handle)
     return team_py
 
 
-cpdef object team_lsa(intptr_t comm):
+cpdef object team_lsa(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef Team team_py = Team()
     cdef ncclTeam_t *team = <ncclTeam_t *><intptr_t>(team_py._get_ptr())
     with nogil:
-        team[0] = ncclTeamLsa(<Comm>comm)
+        team[0] = ncclTeamLsa(_comm_handle)
     return team_py
 
 
-cpdef object team_rail(intptr_t comm):
+cpdef object team_rail(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef Team team_py = Team()
     cdef ncclTeam_t *team = <ncclTeam_t *><intptr_t>(team_py._get_ptr())
     with nogil:
-        team[0] = ncclTeamRail(<Comm>comm)
+        team[0] = ncclTeamRail(_comm_handle)
     return team_py
 
 
-cpdef object team_cft(intptr_t comm, int mode):
+cpdef object team_cft(object comm, int mode):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef Team team_py = Team()
     cdef ncclTeam_t *team = <ncclTeam_t *><intptr_t>(team_py._get_ptr())
     with nogil:
-        team[0] = ncclTeamCft(<Comm>comm, <ncclCftTeamMode_t>mode)
+        team[0] = ncclTeamCft(_comm_handle, <ncclCftTeamMode_t>mode)
     return team_py
 
 
-cpdef object team_cft_multimem(intptr_t comm):
+cpdef object team_cft_multimem(object comm):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef Team team_py = Team()
     cdef ncclTeam_t *team = <ncclTeam_t *><intptr_t>(team_py._get_ptr())
     with nogil:
-        team[0] = ncclTeamCftMultimem(<Comm>comm)
+        team[0] = ncclTeamCftMultimem(_comm_handle)
     return team_py
 
 
 # Hand-written: the team rank mappers take ncclTeam_t by value and return int
 # (not ncclResult_t), so there is no status to check.
 
-cpdef int team_rank_to_world(intptr_t comm, intptr_t team, int rank):
+cpdef int team_rank_to_world(object comm, intptr_t team, int rank):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef int result
     with nogil:
-        result = ncclTeamRankToWorld(<Comm>comm, (<ncclTeam_t*>team)[0], rank)
+        result = ncclTeamRankToWorld(_comm_handle, (<ncclTeam_t*>team)[0], rank)
     return result
 
 
-cpdef int team_rank_to_lsa(intptr_t comm, intptr_t team, int rank):
+cpdef int team_rank_to_lsa(object comm, intptr_t team, int rank):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     cdef int result
     with nogil:
-        result = ncclTeamRankToLsa(<Comm>comm, (<ncclTeam_t*>team)[0], rank)
+        result = ncclTeamRankToLsa(_comm_handle, (<ncclTeam_t*>team)[0], rank)
     return result
 
 
@@ -5398,10 +5540,11 @@ cpdef lsa_barrier_create_requirement(intptr_t team, int n_barriers, intptr_t out
     check_status(__status__)
 
 
-cpdef gin_barrier_create_requirement(intptr_t comm, intptr_t team, int n_barriers, intptr_t out_handle, intptr_t out_req):
+cpdef gin_barrier_create_requirement(object comm, intptr_t team, int n_barriers, intptr_t out_handle, intptr_t out_req):
+    cdef ncclComm_t _comm_handle = (<Comm?>comm)._get_handle()
     with nogil:
         __status__ = ncclGinBarrierCreateRequirement(
-            <Comm>comm, (<ncclTeam_t*>team)[0], n_barriers,
+            _comm_handle, (<ncclTeam_t*>team)[0], n_barriers,
             <ncclGinBarrierHandle_t*>out_handle, <ncclDevResourceRequirements_t*>out_req)
     check_status(__status__)
 
@@ -5410,30 +5553,33 @@ cpdef gin_barrier_create_requirement(intptr_t comm, intptr_t team, int n_barrier
 # which cybind's single-`return:` form cannot express (SKIP_LOWPP in
 # nccl.cybind.yaml). Each returns a (le_id, le_offset) tuple.
 
-cpdef tuple get_multimem_device_le_info(intptr_t window, size_t offset):
+cpdef tuple get_multimem_device_le_info(object window, size_t offset):
+    cdef ncclWindow_t _window_handle = (<Window?>window)._get_handle()
     cdef ncclCftLeId le_id = 0
     cdef size_t le_offset = 0
     with nogil:
-        __status__ = ncclGetMultimemDeviceLeInfo(<Window>window, offset, &le_id, &le_offset)
+        __status__ = ncclGetMultimemDeviceLeInfo(_window_handle, offset, &le_id, &le_offset)
     check_status(__status__)
     return (le_id, le_offset)
 
 
-cpdef tuple get_cft_device_le_info(intptr_t window, size_t offset, int peer_cft, intptr_t cft_team):
+cpdef tuple get_cft_device_le_info(object window, size_t offset, int peer_cft, intptr_t cft_team):
+    cdef ncclWindow_t _window_handle = (<Window?>window)._get_handle()
     cdef ncclCftLeId le_id = 0
     cdef size_t le_offset = 0
     with nogil:
         __status__ = ncclGetCftDeviceLeInfo(
-            <Window>window, offset, peer_cft, (<ncclTeam_t*>cft_team)[0], &le_id, &le_offset)
+            _window_handle, offset, peer_cft, (<ncclTeam_t*>cft_team)[0], &le_id, &le_offset)
     check_status(__status__)
     return (le_id, le_offset)
 
 
-cpdef tuple get_peer_device_le_info(intptr_t window, size_t offset, int peer_world):
+cpdef tuple get_peer_device_le_info(object window, size_t offset, int peer_world):
+    cdef ncclWindow_t _window_handle = (<Window?>window)._get_handle()
     cdef ncclCftLeId le_id = 0
     cdef size_t le_offset = 0
     with nogil:
-        __status__ = ncclGetPeerDeviceLeInfo(<Window>window, offset, peer_world, &le_id, &le_offset)
+        __status__ = ncclGetPeerDeviceLeInfo(_window_handle, offset, peer_world, &le_id, &le_offset)
     check_status(__status__)
     return (le_id, le_offset)
 
@@ -5447,11 +5593,12 @@ cpdef int ll_a2a_calc_slots(int max_elts, int max_elt_size):
 # Hand-written: ncclGetMultimemDevicePointer takes ncclMultimemHandle_t by value
 # (SKIP_LOWPP in nccl.cybind.yaml). ``multimem`` is a pointer to a MultimemHandle
 # lowpp, dereferenced here.
-cpdef intptr_t get_multimem_device_pointer(intptr_t window, size_t offset, intptr_t multimem) except? 0:
+cpdef intptr_t get_multimem_device_pointer(object window, size_t offset, intptr_t multimem) except? 0:
+    cdef ncclWindow_t _window_handle = (<Window?>window)._get_handle()
     cdef void* out_ptr
     with nogil:
         __status__ = ncclGetMultimemDevicePointer(
-            <Window>window, offset, (<ncclMultimemHandle_t*>multimem)[0], &out_ptr)
+            _window_handle, offset, (<ncclMultimemHandle_t*>multimem)[0], &out_ptr)
     check_status(__status__)
     return <intptr_t>out_ptr
 

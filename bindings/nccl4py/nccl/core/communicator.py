@@ -53,7 +53,6 @@ from nccl.core.typing import (
 )
 from nccl.core.utils import UniqueId
 
-_PointerBox = _nccl_bindings.PointerBox
 _Result = _nccl_bindings.Result
 
 
@@ -442,7 +441,7 @@ def _materialize_team_requirements(
 
 
 def _materialize_resource_requirements(
-    comm_ptr: int,
+    comm: _nccl_bindings.Comm,
     resources: tuple[LsaBarrierRequirement | GinBarrierRequirement | LLA2ARequirement, ...],
 ) -> tuple[
     tuple[_nccl_bindings.DevResourceRequirements, ...],
@@ -480,7 +479,7 @@ def _materialize_resource_requirements(
             handle = _nccl_bindings.GinBarrierHandle()
             team_lowpp = resource.team._to_lowpp()
             _nccl_bindings.gin_barrier_create_requirement(
-                comm_ptr, team_lowpp.ptr, resource.n_barriers, handle.ptr, node.ptr
+                comm, team_lowpp.ptr, resource.n_barriers, handle.ptr, node.ptr
             )
         elif isinstance(resource, LLA2ARequirement):
             handle = _nccl_bindings.LLA2AHandle()
@@ -506,54 +505,72 @@ def _materialize_resource_requirements(
 class Communicator:
     """NCCL communicator for collective and point-to-point operations.
 
-    A communicator represents a group of ranks that can perform collective
-    operations (e.g. allreduce, broadcast) and point-to-point operations
-    (send/recv). Each rank has a unique ID in ``[0, nranks)``.
+    A communicator represents a group of participants that perform NCCL
+    operations. Each participant is assigned an integer rank in
+    ``[0, nranks)``.
 
-    Communicator instances expose a number of properties for inspection
-    (``ptr``, ``nranks``, ``device``, ``rank``, plus device-API related
-    properties like ``cuda_dev``, ``nvml_dev``, ``device_api_support``,
-    ``multimem_support``, ``gin_type``, ``n_lsa_teams``,
-    ``host_rma_support``, ``railed_gin_type``); see the per-property
-    documentation for details.
+    Most users should create communicators with :py:meth:`init` or
+    :py:meth:`init_all`. The constructor is a low-level interoperability
+    entry point for wrapping an existing NCCL communicator pointer or creating
+    a null communicator for later initialization.
+
+    A communicator instance provides collective and point-to-point operations,
+    lifecycle and resource management, and properties describing its rank,
+    device, topology, and capabilities.
     """
 
-    def __init__(self, ptr: int = 0) -> None:
-        """Initializes a communicator with a raw NCCL pointer.
+    _comm: _nccl_bindings.Comm
+    _resources: list[CommResource]
+    _nranks: int | None
+    _device: Device | None
+    _rank: int | None
+    _comm_properties: NCCLCommProperties | None
+    _children_in_progress: list[Communicator]
 
-        Unlike the :py:meth:`init` classmethod, this constructor allows
-        ``ptr=0`` for creating null communicators (e.g. when :py:meth:`split`
-        excludes a rank). A null communicator can later be initialized via
-        :py:meth:`initialize`, or used as the caller for :py:meth:`grow` to
-        join an existing communicator.
+    def __init__(self, ptr: int | None = None) -> None:
+        """Wraps an existing NCCL communicator pointer.
+
+        This is a low-level interoperability entry point for an NCCL
+        communicator pointer obtained from another library or framework. Most
+        users should create communicators with :py:meth:`init` or
+        :py:meth:`init_all` instead.
+
+        Omitting ``ptr`` or passing 0 creates a null communicator. A null
+        communicator can later be initialized with :py:meth:`initialize`, or
+        used with :py:meth:`grow` to join an existing communicator.
 
         Args:
-            ptr: Integer representing an NCCL communicator pointer (0 for a
-                null communicator). Defaults to 0.
+            ptr: Address of an existing NCCL communicator, represented as a
+                Python integer. ``None`` and 0 create a null communicator.
+                Defaults to ``None``.
         """
-        if isinstance(ptr, _PointerBox):
-            self._comm_box = ptr
-        else:
-            self._comm_box = _PointerBox(ptr)
-        self._resources: list[CommResource] = []
-        self._nranks: int | None = None
-        self._device: Device | None = None
-        self._rank: int | None = None
-        self._comm_properties: _nccl_bindings.CommProperties | None = None
-        self._properties: NCCLCommProperties | None = None
+        self._comm = _nccl_bindings.Comm(0 if ptr is None else ptr)
+        self._resources = []
+        self._nranks = None
+        self._device = None
+        self._rank = None
+        self._comm_properties = None
         self._children_in_progress = []
 
+    @classmethod
+    def _from_comm(cls, comm: _nccl_bindings.Comm) -> Communicator:
+        """Constructs a communicator from an internal binding wrapper."""
+        obj = cls()
+        obj._comm = comm
+        return obj
+
     def _check_valid(self, operation: str) -> None:
-        """Raises if the communicator is not initialized.
+        """Validates that this object references an active communicator.
 
         Args:
             operation: Name of the operation being attempted (for the error
                 message).
 
         Raises:
-            NcclInvalid: If the communicator is not initialized (ptr == 0).
+            NcclInvalid: If this object does not reference an active NCCL
+                communicator.
         """
-        if self._comm == 0:
+        if not self._comm:
             raise NcclInvalid(f"Cannot {operation}: Communicator not initialized")
 
     def _validate_buffer_device(self, buffer: NcclBuffer, buffer_name: str = "buffer") -> None:
@@ -574,28 +591,14 @@ class Communicator:
                 f"device as the communicator."
             )
 
-    def _get_comm_properties(self) -> _nccl_bindings.CommProperties:
-        """Queries and caches communicator properties.
-
-        Returns:
-            Cached CommProperties object.
-
-        Raises:
-            NcclInvalid: If the communicator is not initialized.
-        """
-        self._check_valid("query properties")
-        if self._comm_properties is None:
-            self._comm_properties = _nccl_bindings.comm_query_properties(self._comm)
-        return self._comm_properties
-
     def __repr__(self) -> str:
-        if self._comm == 0:
+        if not self._comm:
             return "<Communicator: null (ptr=0)>"
         try:
-            return f"<Communicator: rank={self.rank}/{self.nranks}, device={self.device.device_id}, ptr={self._comm:#x}>"
+            return f"<Communicator: rank={self.rank}/{self.nranks}, device={self.device.device_id}, ptr={self.ptr:#x}>"
         except RuntimeError:
             # If we can't get properties, just show the pointer
-            return f"<Communicator: ptr={self._comm:#x}>"
+            return f"<Communicator: ptr={self.ptr:#x}>"
 
     @classmethod
     def init(
@@ -683,10 +686,9 @@ class Communicator:
 
         # Call NCCL binding to initialize all communicators
         # Note: ncclCommInitAll preserves the current device internally
-        # The binding returns a Cython array containing communicator pointers
-        comm_array = _nccl_bindings.comm_init_all(ndev, devlist)
+        comm_handles = _nccl_bindings.comm_init_all(ndev, devlist)
 
-        return [cls(int(comm_ptr)) for comm_ptr in comm_array]
+        return [cls._from_comm(comm) for comm in comm_handles]
 
     def initialize(
         self,
@@ -712,7 +714,7 @@ class Communicator:
             NcclInvalid: If ``unique_id`` has an invalid type or this
                 communicator is already initialized.
         """
-        if self._comm != 0:
+        if self._comm:
             raise NcclInvalid("Communicator is already initialized")
 
         config_lowpp = None if config is None else config._to_lowpp()
@@ -723,8 +725,8 @@ class Communicator:
             raise NcclInvalid("unique_id must be a UniqueId or a sequence of UniqueIds")
 
         commIds = bytearray().join(bytes(uid) for uid in unique_id)
-        _nccl_bindings.comm_init_rank_scalable(
-            self._comm_box.address, int(nranks), int(rank), int(len(unique_id)), commIds, cfg_ptr
+        self._comm = _nccl_bindings.comm_init_rank_scalable(
+            int(nranks), int(rank), int(len(unique_id)), commIds, cfg_ptr
         )
 
         self._resources = []
@@ -732,7 +734,6 @@ class Communicator:
         self._device = None
         self._rank = None
         self._comm_properties = None
-        self._properties = None
 
     # --- Communicator APIs ---
     def split(
@@ -777,11 +778,10 @@ class Communicator:
             color = -1  # NCCL_SPLIT_NOCOLOR from nccl.h
         config_lowpp = None if config is None else config._to_lowpp()
         cfg_ptr = 0 if config_lowpp is None else config_lowpp.ptr
-        newcomm = type(self)()
-        self._children_in_progress.append(newcomm)
-        _nccl_bindings.comm_split(
-            self._comm, int(color), int(key), newcomm._comm_box.address, cfg_ptr
+        newcomm = type(self)._from_comm(
+            _nccl_bindings.comm_split(self._comm, int(color), int(key), cfg_ptr)
         )
+        self._children_in_progress.append(newcomm)
 
         return newcomm
 
@@ -830,14 +830,14 @@ class Communicator:
         ranks_to_exclude = list(exclude_ranks) if exclude_ranks is not None else []
         config_lowpp = None if config is None else config._to_lowpp()
         cfg_ptr = 0 if config_lowpp is None else config_lowpp.ptr
-        newcomm = type(self)()
-        _nccl_bindings.comm_shrink(
-            self._comm,
-            ranks_to_exclude,
-            len(ranks_to_exclude),
-            newcomm._comm_box.address,
-            cfg_ptr,
-            int(flag),
+        newcomm = type(self)._from_comm(
+            _nccl_bindings.comm_shrink(
+                self._comm,
+                ranks_to_exclude,
+                len(ranks_to_exclude),
+                cfg_ptr,
+                int(flag),
+            )
         )
 
         return newcomm
@@ -913,18 +913,17 @@ class Communicator:
                 or an existing rank is given a null communicator.
         """
         is_new_rank = rank is not None
-        if is_new_rank and self._comm != 0:
+        if is_new_rank and self._comm:
             raise NcclInvalid("New ranks must use a null communicator (Communicator())")
-        if not is_new_rank and self._comm == 0:
+        if not is_new_rank and not self._comm:
             raise NcclInvalid("Existing ranks must use an initialized communicator")
 
         uid_ptr = 0 if unique_id is None else unique_id.ptr
         rank_val = -1 if rank is None else int(rank)
         config_lowpp = None if config is None else config._to_lowpp()
         cfg_ptr = 0 if config_lowpp is None else config_lowpp.ptr
-        newcomm = type(self)()
-        _nccl_bindings.comm_grow(
-            self._comm, int(nranks), uid_ptr, rank_val, newcomm._comm_box.address, cfg_ptr
+        newcomm = type(self)._from_comm(
+            _nccl_bindings.comm_grow(self._comm, int(nranks), uid_ptr, rank_val, cfg_ptr)
         )
 
         return newcomm
@@ -952,11 +951,11 @@ class Communicator:
         # Close all resources first (best-effort, ignore errors)
         self.close_all_resources()
 
-        if self._comm == 0:
+        if not self._comm:
             return
 
         _nccl_bindings.comm_destroy(self._comm)
-        self._comm_box.ptr = 0
+        self._comm = _nccl_bindings.Comm()
 
     def abort(self) -> None:
         """Aborts the communicator and frees resources, terminating in-flight operations.
@@ -977,11 +976,11 @@ class Communicator:
         # Close all resources first (best-effort, ignore errors)
         self.close_all_resources()
 
-        if self._comm == 0:
+        if not self._comm:
             return
 
         _nccl_bindings.comm_abort(self._comm)
-        self._comm_box.ptr = 0
+        self._comm = _nccl_bindings.Comm()
 
     def finalize(self) -> None:
         """Finalizes the communicator, flushing uncompleted operations and network resources.
@@ -1002,7 +1001,7 @@ class Communicator:
         See Also:
             :c:func:`ncclCommFinalize`
         """
-        if self._comm == 0:
+        if not self._comm:
             return
 
         _nccl_bindings.comm_finalize(self._comm)
@@ -1060,20 +1059,14 @@ class Communicator:
 
     # --- Properties ---
     @property
-    def _comm(self) -> int:
-        return int(self._comm_box.ptr)
-
-    @property
     def ptr(self) -> int:
-        """Raw pointer to the underlying :c:type:`ncclComm_t` structure
-        (0 if destroyed or null).
-        """
-        return self._comm
+        """Integer value of the underlying :c:type:`ncclComm_t` (0 if destroyed or null)."""
+        return self._comm.handle
 
     @property
     def is_valid(self) -> bool:
         """Whether the communicator is valid (not destroyed or null)."""
-        return self._comm != 0
+        return bool(self._comm)
 
     @property
     def nranks(self) -> int:
@@ -1126,11 +1119,11 @@ class Communicator:
             NcclInvalid: If the communicator is not initialized.
         """
         self._check_valid("get properties")
-        if self._properties is None:
-            pod = self._get_comm_properties()
+        if self._comm_properties is None:
+            pod = _nccl_bindings.comm_query_properties(self._comm)
             gin_support = getattr(pod, "gin_support", None)
             gin_connection_type = getattr(pod, "gin_connection_type", None)
-            self._properties = NCCLCommProperties(
+            self._comm_properties = NCCLCommProperties(
                 rank=pod.rank,
                 n_ranks=pod.n_ranks,
                 cuda_dev=pod.cuda_dev,
@@ -1160,7 +1153,7 @@ class Communicator:
                 ),
                 dev_comm_runtime_version_size=getattr(pod, "dev_comm_runtime_version_size", None),
             )
-        return self._properties
+        return self._comm_properties
 
     @property
     def cuda_dev(self) -> int:
@@ -1171,7 +1164,7 @@ class Communicator:
 
         """
         self._check_valid("get cuda_dev")
-        return self._get_comm_properties().cuda_dev
+        return self.properties.cuda_dev
 
     @property
     def nvml_dev(self) -> int:
@@ -1184,7 +1177,7 @@ class Communicator:
 
         """
         self._check_valid("get nvml_dev")
-        return self._get_comm_properties().nvml_dev
+        return self.properties.nvml_dev
 
     @property
     def device_api_support(self) -> bool:
@@ -1197,7 +1190,7 @@ class Communicator:
 
         """
         self._check_valid("get device_api_support")
-        return bool(self._get_comm_properties().device_api_support)
+        return self.properties.device_api_support
 
     @property
     def multimem_support(self) -> bool:
@@ -1211,7 +1204,7 @@ class Communicator:
 
         """
         self._check_valid("get multimem_support")
-        return bool(self._get_comm_properties().multimem_support)
+        return self.properties.multimem_support
 
     @property
     def gin_type(self) -> NcclGinType:
@@ -1227,7 +1220,7 @@ class Communicator:
 
         """
         self._check_valid("get gin_type")
-        return NcclGinType(self._get_comm_properties().gin_type)
+        return self.properties.gin_type
 
     @property
     def n_lsa_teams(self) -> int:
@@ -1238,7 +1231,7 @@ class Communicator:
 
         """
         self._check_valid("get n_lsa_teams")
-        return self._get_comm_properties().n_lsa_teams
+        return self.properties.n_lsa_teams
 
     @property
     def team_world(self) -> NCCLTeam:
@@ -1248,7 +1241,7 @@ class Communicator:
             NcclInvalid: If the communicator is not initialized.
         """
         self._check_valid("get team_world")
-        pod = _nccl_bindings.team_world(self.ptr)
+        pod = _nccl_bindings.team_world(self._comm)
         return NCCLTeam(pod.n_ranks, pod.rank, pod.stride)
 
     @property
@@ -1259,7 +1252,7 @@ class Communicator:
             NcclInvalid: If the communicator is not initialized.
         """
         self._check_valid("get team_lsa")
-        pod = _nccl_bindings.team_lsa(self.ptr)
+        pod = _nccl_bindings.team_lsa(self._comm)
         return NCCLTeam(pod.n_ranks, pod.rank, pod.stride)
 
     @property
@@ -1270,7 +1263,7 @@ class Communicator:
             NcclInvalid: If the communicator is not initialized.
         """
         self._check_valid("get team_rail")
-        pod = _nccl_bindings.team_rail(self.ptr)
+        pod = _nccl_bindings.team_rail(self._comm)
         return NCCLTeam(pod.n_ranks, pod.rank, pod.stride)
 
     @property
@@ -1282,7 +1275,7 @@ class Communicator:
 
         """
         self._check_valid("get host_rma_support")
-        return bool(self._get_comm_properties().host_rma_support)
+        return self.properties.host_rma_support
 
     @property
     def railed_gin_type(self) -> NcclGinType:
@@ -1297,7 +1290,7 @@ class Communicator:
 
         """
         self._check_valid("get railed_gin_type")
-        return NcclGinType(self._get_comm_properties().railed_gin_type)
+        return self.properties.railed_gin_type
 
     def team_rank_to_world(self, team: NCCLTeam, team_rank: int) -> int:
         """Maps a rank within ``team`` to its rank in this communicator.
@@ -1319,7 +1312,7 @@ class Communicator:
         """
         self._check_valid("team_rank_to_world")
         team_lowpp = team._to_lowpp()
-        return _nccl_bindings.team_rank_to_world(self.ptr, team_lowpp.ptr, team_rank)
+        return _nccl_bindings.team_rank_to_world(self._comm, team_lowpp.ptr, team_rank)
 
     def team_rank_to_lsa(self, team: NCCLTeam, team_rank: int) -> int:
         """Maps a rank within ``team`` to its rank in the LSA team.
@@ -1344,7 +1337,7 @@ class Communicator:
         """
         self._check_valid("team_rank_to_lsa")
         team_lowpp = team._to_lowpp()
-        return _nccl_bindings.team_rank_to_lsa(self.ptr, team_lowpp.ptr, team_rank)
+        return _nccl_bindings.team_rank_to_lsa(self._comm, team_lowpp.ptr, team_rank)
 
     # --- Point-to-Point Communication ---
     def send(
@@ -1371,7 +1364,7 @@ class Communicator:
         self._validate_buffer_device(s, "sendbuf")
 
         _nccl_bindings.send(
-            s.ptr, s.count, int(s.dtype), int(peer), int(self._comm), get_stream_ptr(stream)
+            s.ptr, s.count, int(s.dtype), int(peer), self._comm, get_stream_ptr(stream)
         )
 
     def recv(
@@ -1398,7 +1391,7 @@ class Communicator:
         self._validate_buffer_device(r, "recvbuf")
 
         _nccl_bindings.recv(
-            r.ptr, r.count, int(r.dtype), int(peer), int(self._comm), get_stream_ptr(stream)
+            r.ptr, r.count, int(r.dtype), int(peer), self._comm, get_stream_ptr(stream)
         )
 
     def wait_signal(
@@ -1434,7 +1427,7 @@ class Communicator:
 
         lowpp_descs = [d._to_lowpp() for d in descs]
         buf = bytearray().join(bytes(d) for d in lowpp_descs)
-        _nccl_bindings.wait_signal(len(descs), buf, int(self._comm), get_stream_ptr(stream))
+        _nccl_bindings.wait_signal(len(descs), buf, self._comm, get_stream_ptr(stream))
 
     def signal(
         self,
@@ -1529,7 +1522,7 @@ class Communicator:
             buffer.count,
             int(buffer.dtype),
             peer,
-            peer_window.handle,
+            peer_window._window,
             int(peer_window_offset) * buffer.dtype.itemsize,
             signal_index,
             context,
@@ -1620,7 +1613,7 @@ class Communicator:
         dtype = r.dtype
 
         _nccl_bindings.broadcast(
-            s_ptr, r_ptr, count, int(dtype), int(root), int(self._comm), get_stream_ptr(stream)
+            s_ptr, r_ptr, count, int(dtype), int(root), self._comm, get_stream_ptr(stream)
         )
 
     def reduce(
@@ -1694,7 +1687,7 @@ class Communicator:
 
         if root is None:
             _nccl_bindings.all_reduce(
-                s_ptr, r_ptr, count, int(dtype), int(op), int(self._comm), get_stream_ptr(stream)
+                s_ptr, r_ptr, count, int(dtype), int(op), self._comm, get_stream_ptr(stream)
             )
         else:
             _nccl_bindings.reduce(
@@ -1704,7 +1697,7 @@ class Communicator:
                 int(dtype),
                 int(op),
                 int(root),
-                int(self._comm),
+                self._comm,
                 get_stream_ptr(stream),
             )
 
@@ -1793,7 +1786,7 @@ class Communicator:
         dtype = s.dtype
 
         _nccl_bindings.reduce_scatter(
-            s_ptr, r_ptr, count, int(dtype), int(op), int(self._comm), get_stream_ptr(stream)
+            s_ptr, r_ptr, count, int(dtype), int(op), self._comm, get_stream_ptr(stream)
         )
 
     def alltoall(
@@ -1855,7 +1848,7 @@ class Communicator:
         dtype = s.dtype
 
         _nccl_bindings.allto_all(
-            s_ptr, r_ptr, count, int(dtype), int(self._comm), get_stream_ptr(stream)
+            s_ptr, r_ptr, count, int(dtype), self._comm, get_stream_ptr(stream)
         )
 
     def gather(
@@ -1929,11 +1922,11 @@ class Communicator:
 
         if root is None:
             _nccl_bindings.all_gather(
-                s_ptr, r_ptr, count, int(dtype), int(self._comm), get_stream_ptr(stream)
+                s_ptr, r_ptr, count, int(dtype), self._comm, get_stream_ptr(stream)
             )
         else:
             _nccl_bindings.gather(
-                s_ptr, r_ptr, count, int(dtype), int(root), int(self._comm), get_stream_ptr(stream)
+                s_ptr, r_ptr, count, int(dtype), int(root), self._comm, get_stream_ptr(stream)
             )
 
     def scatter(
@@ -2003,7 +1996,7 @@ class Communicator:
         dtype = r.dtype
 
         _nccl_bindings.scatter(
-            s_ptr, r_ptr, count, int(dtype), int(root), int(self._comm), get_stream_ptr(stream)
+            s_ptr, r_ptr, count, int(dtype), int(root), self._comm, get_stream_ptr(stream)
         )
 
     # --- Registration ---
@@ -2045,12 +2038,13 @@ class Communicator:
 
     def register_window(
         self, buffer: NcclBufferSpec, flags: WindowFlag | None = None
-    ) -> RegisteredWindowHandle | None:
+    ) -> RegisteredWindowHandle:
         """Collectively registers a local buffer into an NCCL window.
 
         This is a collective call: every rank in the communicator must
-        participate, and buffer size must be equal among ranks by default.
-        Buffer size is automatically derived from buffer count and dtype.
+        participate. Buffer size is automatically derived from buffer count
+        and dtype.
+
         If called within a group, the handle value may not be filled until
         ``ncclGroupEnd`` completes. For non-blocking communicators, the handle
         may remain ``0`` until :py:meth:`get_async_error` reports success.
@@ -2067,8 +2061,8 @@ class Communicator:
 
         Returns:
             :py:class:`~nccl.core.RegisteredWindowHandle` for the registered
-            window, or ``None`` if NCCL returns a NULL handle (e.g. windows
-            are unsupported on this platform).
+            window. Its handle remains ``0`` while registration is pending,
+            or when windows are unsupported on the platform.
 
         Raises:
             NcclInvalid: If the buffer is on the wrong device or the
@@ -2084,17 +2078,10 @@ class Communicator:
         buffer_ptr = nccl_buf.ptr
         size = nccl_buf.count * nccl_buf.dtype.itemsize
 
+        # NCCL itself gates registration on platform support. Always retain and
+        # return its handle storage because a null handle can also mean that a
+        # grouped or non-blocking registration has not filled it yet.
         resource = RegisteredWindowHandle(self._comm, buffer_ptr, size, flags)
-        if self.get_async_error() == int(_Result.Success) and resource.handle == 0:
-            # A non-blocking communicator only initializes the handle value
-            # after InProgress has changed to Success.  Until then the handle
-            # will remain NULL, but we cannot assume its invalid.
-            #
-            # But if status is Success and handle is still null, then we can
-            # simply return None.
-            resource.close()
-            return None
-
         self._resources.append(resource)
         return resource
 

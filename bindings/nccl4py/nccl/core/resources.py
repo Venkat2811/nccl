@@ -5,10 +5,9 @@
 
 """Communicator-owned resource management.
 
-This module provides resource classes for NCCL communicator-owned objects including
-registered buffers for zero-copy communication, registered windows for RMA operations,
-and custom reduction operators. All resources are automatically cleaned up when the
-owning communicator is destroyed or aborted.
+This module provides resource abstractions for objects owned by an NCCL
+communicator. Resources created through a communicator are tracked and
+automatically closed when the communicator is destroyed or aborted.
 """
 
 from __future__ import annotations
@@ -16,13 +15,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from nccl.bindings import nccl as _nccl_bindings
-
 from nccl.core._binding_helpers import LowppView
 from nccl.core.constants import WindowFlag
 from nccl.core.team import NCCLTeam
 from nccl.core.typing import NcclDataType, NcclInvalid
-
-_PointerBox = _nccl_bindings.PointerBox
 
 __all__ = [
     "MultimemHandle",
@@ -49,7 +45,7 @@ class MultimemHandle(LowppView, lowpp_cls=_nccl_bindings.MultimemHandle):
 
 
 class LsaBarrierHandle(LowppView, lowpp_cls=_nccl_bindings.LsaBarrierHandle):
-    """LSA barrier handle, returned by
+    """Load/Store Accessible (LSA) barrier handle, returned by
     :py:attr:`~nccl.core.DevCommResource.resource_handles` for each
     :py:class:`~nccl.core.LsaBarrierRequirement`. Pass it to device-side
     barrier sessions.
@@ -57,7 +53,7 @@ class LsaBarrierHandle(LowppView, lowpp_cls=_nccl_bindings.LsaBarrierHandle):
 
     @property
     def buf_handle(self) -> int:
-        """Buffer resource offset assigned by NCCL during device comm creation."""
+        """Buffer resource offset assigned during device communicator creation."""
         return self._lowpp.buf_handle
 
     @property
@@ -67,7 +63,7 @@ class LsaBarrierHandle(LowppView, lowpp_cls=_nccl_bindings.LsaBarrierHandle):
 
 
 class GinBarrierHandle(LowppView, lowpp_cls=_nccl_bindings.GinBarrierHandle):
-    """GIN barrier handle, returned by
+    """GPU-Initiated Networking (GIN) barrier handle, returned by
     :py:attr:`~nccl.core.DevCommResource.resource_handles` for each
     :py:class:`~nccl.core.GinBarrierRequirement`. Pass it to device-side
     barrier sessions.
@@ -75,12 +71,12 @@ class GinBarrierHandle(LowppView, lowpp_cls=_nccl_bindings.GinBarrierHandle):
 
     @property
     def signal0(self) -> int:
-        """Starting GIN signal index assigned by NCCL during device comm creation."""
+        """Starting GIN signal index assigned during device communicator creation."""
         return self._lowpp.signal0
 
 
 class LLA2AHandle(LowppView, lowpp_cls=_nccl_bindings.LLA2AHandle):
-    """Low-latency all-to-all handle, returned by
+    """Low-latency all-to-all (LLA2A) handle, returned by
     :py:attr:`~nccl.core.DevCommResource.resource_handles` for each
     :py:class:`~nccl.core.LLA2ARequirement`. Pass it to device-side all-to-all
     sessions.
@@ -88,7 +84,7 @@ class LLA2AHandle(LowppView, lowpp_cls=_nccl_bindings.LLA2AHandle):
 
     @property
     def buf_handle(self) -> int:
-        """Buffer resource offset assigned by NCCL during device comm creation."""
+        """Buffer resource offset assigned during device communicator creation."""
         return self._lowpp.buf_handle
 
     @property
@@ -101,24 +97,24 @@ class CommResource(ABC):
     """Abstract base class for NCCL communicator-owned resources.
 
     Resources are tied to a specific communicator. They can be released
-    explicitly via :py:meth:`close`, and are released automatically when the
-    owning communicator is destroyed or aborted.
+    explicitly via :py:meth:`close`. Resources created through a communicator
+    are also released when that communicator is destroyed or aborted.
     """
 
-    def __init__(self, comm_ptr: int):
-        """Initializes the resource with a communicator pointer.
+    def __init__(self, comm: _nccl_bindings.Comm):
+        """Initializes a resource for an NCCL communicator.
 
         Args:
-            comm_ptr: Raw NCCL communicator pointer.
+            comm: Internal binding object for the owning NCCL communicator.
 
         Raises:
-            NcclInvalid: If comm_ptr is 0 (invalid communicator).
+            NcclInvalid: If the communicator is null.
         """
-        if comm_ptr == 0:
+        if not comm:
             raise NcclInvalid(
                 "Invalid communicator: cannot create resource with communicator ptr=0"
             )
-        self._comm_ptr = comm_ptr
+        self._comm = comm
         self._closed = False
 
     @abstractmethod
@@ -148,7 +144,7 @@ class CommResource(ABC):
         self._deallocate()
 
     def _check_valid(self) -> None:
-        """Raises if the resource has been closed.
+        """Validates that the resource has not been closed.
 
         Raises:
             RuntimeError: If the resource has been closed.
@@ -172,31 +168,31 @@ class RegisteredBufferHandle(CommResource):
     owning communicator is destroyed or aborted.
     """
 
-    def __init__(self, comm_ptr: int, buffer_ptr: int, size: int):
+    def __init__(self, comm: _nccl_bindings.Comm, buffer_ptr: int, size: int):
         """Creates and registers a buffer with NCCL.
 
         Args:
-            comm_ptr: NCCL communicator raw pointer.
+            comm: Internal binding object for the owning NCCL communicator.
             buffer_ptr: Device pointer to the buffer.
             size: Size of the buffer in bytes.
 
         Raises:
-            NcclInvalid: If comm_ptr is 0 (invalid communicator).
+            NcclInvalid: If the communicator is null.
         """
         self._buffer_ptr = buffer_ptr
         self._size = size
         self._handle: int | None = None
-        super().__init__(comm_ptr)
+        super().__init__(comm)
         self._allocate()
 
     def _allocate(self) -> None:
         """Registers the buffer with NCCL for zero-copy communication."""
-        self._handle = _nccl_bindings.comm_register(self._comm_ptr, self._buffer_ptr, self._size)
+        self._handle = _nccl_bindings.comm_register(self._comm, self._buffer_ptr, self._size)
 
     def _deallocate(self) -> None:
         """Deregisters the buffer from NCCL."""
         if self._handle is not None:
-            _nccl_bindings.comm_deregister(self._comm_ptr, self._handle)
+            _nccl_bindings.comm_deregister(self._comm, self._handle)
             self._handle = None
 
     @property
@@ -228,39 +224,46 @@ class RegisteredWindowHandle(CommResource):
 
     Registers a memory window with the communicator for one-sided communication
     patterns. Created by :py:meth:`Communicator.register_window`. Registration
-    is collective: all ranks must call
-    :py:meth:`Communicator.register_window` with equal buffer sizes by
-    default. Deregistration is local. The window handle can be released
-    explicitly via :py:meth:`close`, or automatically when the owning
-    communicator is destroyed or aborted.
+    is collective: all ranks must call :py:meth:`Communicator.register_window`.
+    Deregistration is local. The window handle can be released explicitly via
+    :py:meth:`close`, or automatically when the owning communicator is
+    destroyed or aborted.
     """
 
-    def __init__(self, comm_ptr: int, buffer_ptr: int, size: int, flags: WindowFlag | None = None):
+    _window: _nccl_bindings.Window
+    _buffer_ptr: int
+    _size: int
+    _flags: WindowFlag
+
+    def __init__(
+        self,
+        comm: _nccl_bindings.Comm,
+        buffer_ptr: int,
+        size: int,
+        flags: WindowFlag | None = None,
+    ):
         """Creates and registers a memory window with NCCL.
 
         Args:
-            comm_ptr: NCCL communicator raw pointer.
+            comm: Internal binding object for the owning NCCL communicator.
             buffer_ptr: Device pointer to the buffer.
             size: Size of the window in bytes.
             flags: Window registration flags. Defaults to ``None``
                 (:py:attr:`~nccl.core.WindowFlag.DEFAULT`).
 
         Raises:
-            NcclInvalid: If comm_ptr is 0 (invalid communicator).
+            NcclInvalid: If the communicator is null.
         """
         self._buffer_ptr = buffer_ptr
         self._size = size
         self._flags = flags if flags is not None else WindowFlag.DEFAULT
-        self._handle = _PointerBox()
-        self._closed = True
-        self._comm_ptr = comm_ptr
+        super().__init__(comm)
         self._allocate()
-        super().__init__(comm_ptr)
 
     def _allocate(self) -> None:
         """Collectively registers the window with NCCL."""
-        _nccl_bindings.comm_window_register(
-            self._comm_ptr, self._buffer_ptr, self._size, self._handle.address, self._flags.value
+        self._window = _nccl_bindings.comm_window_register(
+            self._comm, self._buffer_ptr, self._size, self._flags.value
         )
 
     def _deallocate(self) -> None:
@@ -269,20 +272,20 @@ class RegisteredWindowHandle(CommResource):
         Deregistration is local to the rank. The caller must ensure the
         buffer is not being accessed by any NCCL operation.
         """
-        if self.handle:
-            _nccl_bindings.comm_window_deregister(self._comm_ptr, self.handle)
-            self._handle.ptr = 0
-        self._closed = True
+        if self._window:
+            _nccl_bindings.comm_window_deregister(self._comm, self._window)
+            # The wrapper's handle is read-only; swap in a null one to mark it deregistered.
+            self._window = _nccl_bindings.Window()
 
     @property
     def is_valid(self) -> bool:
         """Whether the window is still registered (not closed, handle non-null)."""
-        return not self._closed and bool(self._handle.ptr)
+        return not self._closed and bool(self._window)
 
     @property
     def handle(self) -> int:
-        """Window handle for NCCL operations, or ``0`` once deregistered."""
-        return int(self._handle.ptr)
+        """Window handle value, or ``0`` while unavailable or after deregistration."""
+        return self._window.handle
 
     @property
     def size(self) -> int:
@@ -316,7 +319,7 @@ class RegisteredWindowHandle(CommResource):
             RuntimeError: If the window has been closed.
         """
         self._check_valid()
-        ptr = _nccl_bindings.get_lsa_multimem_device_pointer(self.handle, offset)
+        ptr = _nccl_bindings.get_lsa_multimem_device_pointer(self._window, offset)
         return ptr if ptr != 0 else None
 
     def get_multimem_device_pointer(self, multimem: MultimemHandle, offset: int = 0) -> int | None:
@@ -338,7 +341,7 @@ class RegisteredWindowHandle(CommResource):
             RuntimeError: If the window has been closed.
         """
         self._check_valid()
-        ptr = _nccl_bindings.get_multimem_device_pointer(self.handle, offset, multimem._lowpp.ptr)
+        ptr = _nccl_bindings.get_multimem_device_pointer(self._window, offset, multimem._lowpp.ptr)
         return ptr if ptr != 0 else None
 
     def get_lsa_device_pointer(self, lsa_rank: int, offset: int = 0) -> int:
@@ -358,7 +361,7 @@ class RegisteredWindowHandle(CommResource):
             RuntimeError: If the window has been closed.
         """
         self._check_valid()
-        return _nccl_bindings.get_lsa_device_pointer(self.handle, offset, lsa_rank)
+        return _nccl_bindings.get_lsa_device_pointer(self._window, offset, lsa_rank)
 
     def get_peer_device_pointer(self, peer: int, offset: int = 0) -> int | None:
         """Returns a device pointer to a peer's window buffer by world rank.
@@ -377,7 +380,7 @@ class RegisteredWindowHandle(CommResource):
             RuntimeError: If the window has been closed.
         """
         self._check_valid()
-        ptr = _nccl_bindings.get_peer_device_pointer(self.handle, offset, peer)
+        ptr = _nccl_bindings.get_peer_device_pointer(self._window, offset, peer)
         return ptr if ptr != 0 else None
 
     def __repr__(self) -> str:
@@ -396,7 +399,7 @@ class CustomRedOp(CommResource):
 
     def __init__(
         self,
-        comm_ptr: int,
+        comm: _nccl_bindings.Comm,
         scalar_ptr: int,
         datatype: NcclDataType,
         residence: _nccl_bindings.ScalarResidence,
@@ -404,33 +407,33 @@ class CustomRedOp(CommResource):
         """Creates a custom reduction operator.
 
         Args:
-            comm_ptr: NCCL communicator raw pointer.
+            comm: Internal binding object for the owning NCCL communicator.
             scalar_ptr: Pointer to the scalar value (host or device memory).
             datatype: NCCL data type of the scalar and reduction.
             residence: Indicates scalar memory location (HostImmediate or
                 Device).
 
         Raises:
-            NcclInvalid: If comm_ptr is 0 (invalid communicator).
+            NcclInvalid: If the communicator is null.
         """
         self._scalar_ptr = scalar_ptr
         self._datatype = datatype
         self._residence = residence
         self._op: int | None = None
 
-        super().__init__(comm_ptr)
+        super().__init__(comm)
         self._allocate()
 
     def _allocate(self) -> None:
         """Creates the custom reduction operator in NCCL."""
         self._op = _nccl_bindings.red_op_create_pre_mul_sum(
-            self._scalar_ptr, int(self._datatype), int(self._residence), self._comm_ptr
+            self._scalar_ptr, int(self._datatype), int(self._residence), self._comm
         )
 
     def _deallocate(self) -> None:
         """Destroys the custom reduction operator in NCCL."""
         if self._op is not None:
-            _nccl_bindings.red_op_destroy(self._op, self._comm_ptr)
+            _nccl_bindings.red_op_destroy(self._op, self._comm)
             self._op = None
 
     @property
@@ -462,15 +465,25 @@ class CustomRedOp(CommResource):
 class DevCommResource(CommResource):
     """NCCL device communicator resource for device-side operations.
 
-    Wraps ``ncclDevComm_t`` and manages its lifecycle. Created by
+    Owns and manages an :c:type:`ncclDevComm_t <ncclDevComm>` created by
     :py:meth:`Communicator.create_dev_comm`. The device communicator is
     automatically destroyed when the parent communicator is destroyed or
     aborted.
     """
 
+    _reqs_lowpp: _nccl_bindings.DevCommRequirements
+    _team_multimem_lowpp: dict[NCCLTeam, _nccl_bindings.MultimemHandle]
+    _resource_handle_lowpps: tuple[
+        _nccl_bindings.LsaBarrierHandle
+        | _nccl_bindings.GinBarrierHandle
+        | _nccl_bindings.LLA2AHandle,
+        ...,
+    ]
+    _dev_comm: _nccl_bindings.DevComm | None
+
     def __init__(
         self,
-        comm_ptr: int,
+        comm: _nccl_bindings.Comm,
         reqs_lowpp: _nccl_bindings.DevCommRequirements,
         team_multimem_lowpp: dict[NCCLTeam, _nccl_bindings.MultimemHandle] | None = None,
         resource_handle_lowpps: tuple[
@@ -484,27 +497,27 @@ class DevCommResource(CommResource):
         """Creates a device communicator from an existing host communicator.
 
         Args:
-            comm_ptr: NCCL communicator raw pointer.
-            reqs_lowpp: Per-create low-level requirements root. Consumed during
-                construction and released once ncclDevCommCreate has copied it;
-                the caller keeps its linked-list nodes alive until this
-                constructor returns.
-            team_multimem_lowpp: Per-team multimem output storage. The resource
-                retains these objects because NCCL writes through their
-                pointers and returned handle facades reference them.
-            resource_handle_lowpps: Per-resource output handle lowpps in
-                requirement order. The resource retains the handle storage
-                because NCCL writes offsets into it during creation and device
-                kernels read it afterwards.
+            comm: Internal binding object for the owning NCCL communicator.
+            reqs_lowpp: Internal device communicator requirements. The caller
+                keeps the linked-list nodes alive until this constructor
+                returns; the root object is released after
+                :c:func:`ncclDevCommCreate` copies it.
+            team_multimem_lowpp: Internal per-team storage for multimem outputs.
+                This resource retains the storage because NCCL writes through
+                it and returned multimem handles reference it.
+            resource_handle_lowpps: Internal output storage for resource
+                handles, in requirement order. This resource retains the
+                storage because NCCL populates it during creation and returned
+                resource handles reference it.
 
         Raises:
-            NcclInvalid: If comm_ptr is 0 (invalid communicator).
+            NcclInvalid: If the communicator is null.
         """
         self._reqs_lowpp = reqs_lowpp
         self._team_multimem_lowpp = team_multimem_lowpp or {}
-        self._resource_handle_lowpps = resource_handle_lowpps or []
-        self._dev_comm: _nccl_bindings.DevComm | None = None
-        super().__init__(comm_ptr)
+        self._resource_handle_lowpps = resource_handle_lowpps or ()
+        self._dev_comm = None
+        super().__init__(comm)
         # reqs_lowpp is only needed for the create call; drop it afterwards so we
         # don't retain a struct whose linked-list pointers dangle once the
         # caller's requirement nodes are freed.
@@ -515,17 +528,17 @@ class DevCommResource(CommResource):
 
     def _allocate(self) -> None:
         """Creates the device communicator via ncclDevCommCreate."""
-        self._dev_comm = _nccl_bindings.dev_comm_create(self._comm_ptr, self._reqs_lowpp.ptr)
+        self._dev_comm = _nccl_bindings.dev_comm_create(self._comm, self._reqs_lowpp.ptr)
 
     def _deallocate(self) -> None:
         """Destroys the device communicator via ncclDevCommDestroy."""
         if self._dev_comm is not None:
-            _nccl_bindings.dev_comm_destroy(self._comm_ptr, self._dev_comm.ptr)
+            _nccl_bindings.dev_comm_destroy(self._comm, self._dev_comm.ptr)
             self._dev_comm = None
 
     @property
     def dev_comm(self) -> _nccl_bindings.DevComm:
-        """DevComm object wrapping :c:type:`ncclDevComm_t <ncclDevComm>`.
+        """Internal binding object for :c:type:`ncclDevComm_t <ncclDevComm>`.
 
         Raises:
             RuntimeError: If the device communicator has been destroyed.
@@ -537,7 +550,8 @@ class DevCommResource(CommResource):
 
     @property
     def ptr(self) -> int:
-        """Raw pointer to the underlying :c:type:`ncclDevComm_t <ncclDevComm>` structure.
+        """Address of the underlying :c:type:`ncclDevComm_t <ncclDevComm>`
+        object, represented as a Python integer.
 
         Raises:
             RuntimeError: If the device communicator has been destroyed.
@@ -547,9 +561,8 @@ class DevCommResource(CommResource):
     def multimem_handle(self, team: NCCLTeam) -> MultimemHandle:
         """Returns the multimem handle requested for ``team``.
 
-        The returned facade wraps this dev comm's per-create output storage;
-        each lookup creates a new facade over the same storage. It remains
-        backed by the resource until the device communicator is closed.
+        The returned handle references storage owned by this resource and
+        remains valid until the device communicator is closed.
 
         Args:
             team: The team the handle was requested for, as an entry of the
