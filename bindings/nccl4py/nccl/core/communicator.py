@@ -59,6 +59,7 @@ _Result = _nccl_bindings.Result
 
 __all__ = [
     "NCCLConfig",
+    "NCCLCommProperties",
     "WaitSignalDesc",
     "TeamRequirement",
     "LsaBarrierRequirement",
@@ -136,6 +137,86 @@ class NCCLConfig(LowppSpec, lowpp_cls=_nccl_bindings.Config):
     graph_stream_ordering: int | None = None
     """Whether NCCL preserves stream-ordering semantics for collectives captured into CUDA graphs. Supported values are 0 (disabled) or 1 (enabled). The value 0 cannot be combined with ``graph_usage_mode=2``. Also controllable via the ``NCCL_GRAPH_STREAM_ORDERING`` environment variable. If unset, NCCL uses 1."""
 
+    launch_order_implicit: bool | None = None
+    """Whether this communicator takes part in implicit launch ordering (NCCL 2.31+). Within one CUDA context, operations on communicators that enable it must not overlap with operations on communicators that do not. Also controllable via the ``NCCL_LAUNCH_ORDER_IMPLICIT`` environment variable, which takes precedence. If unset, NCCL uses False."""
+
+    num_rma_sig: int | None = None
+    """Number of one-sided RMA signal indexes available per context (NCCL 2.31+). Non-negative integer; bounds the ``signal_index`` accepted by the signal and wait-signal operations. If unset, NCCL uses 1."""
+
+    rma_eager_init: bool | None = None
+    """Whether the collective one-sided RMA signal setup is initialized at communicator creation rather than at the first window registration (NCCL 2.31+). True is required if the communicator issues signal or wait-signal operations without first registering a symmetric window. Also controllable via the ``NCCL_RMA_EAGER_INIT`` environment variable, which takes precedence. If unset, NCCL uses False."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class NCCLCommProperties:
+    """The properties NCCL reports for a communicator.
+
+    Returned by :py:attr:`Communicator.properties`. These values are fixed
+    for the lifetime of the communicator. Fields marked NCCL 2.31+ are
+    ``None`` when nccl4py was built against an older NCCL.
+
+    See Also:
+        :c:type:`ncclCommProperties` for the description of each field.
+    """
+
+    rank: int
+    """This caller's rank within the communicator."""
+
+    n_ranks: int
+    """Number of ranks in the communicator."""
+
+    cuda_dev: int
+    """CUDA device ID associated with the communicator."""
+
+    nvml_dev: int
+    """NVML device ID for the GPU. Uses the NVML indexing space, which may
+    differ from CUDA indexing."""
+
+    device_api_support: bool
+    """Whether device-side NCCL operations are supported."""
+
+    multimem_support: bool
+    """Whether ranks in the same LSA team can communicate using multimem."""
+
+    gin_type: NcclGinType
+    """GIN transport reaching every rank. ``NONE`` unless
+    :py:attr:`gin_connection_type` is ``FULL``, even when a rail-restricted
+    transport is available."""
+
+    n_lsa_teams: int
+    """Number of LSA teams."""
+
+    host_rma_support: bool
+    """Whether host RMA is supported."""
+
+    railed_gin_type: NcclGinType
+    """GIN transport reaching ranks within a rail. ``NONE`` only when no GIN
+    transport is available at all."""
+
+    comm_hash: int | None = None
+    """Hash identifying the communicator, shared by all its ranks (NCCL 2.31+)."""
+
+    gin_min_stride: int | None = None
+    """Granularity of the GIN rank stride this communicator supports. A stride
+    passed as :py:attr:`NCCLDevCommRequirements.gin_custom_stride` must be a
+    multiple of this value, and no larger than the rail team's stride. It is 1
+    when :py:attr:`gin_connection_type` is ``FULL`` (NCCL 2.31+)."""
+
+    gin_connection_type: NcclGinConnectionType | None = None
+    """Widest GIN connection topology this communicator supports: ``NONE``,
+    ``RAIL`` or ``FULL``. A device communicator may request this topology or a
+    narrower one via
+    :py:attr:`NCCLDevCommRequirements.gin_connection_type` (NCCL 2.31+)."""
+
+    available_gin_types: frozenset[NcclGinType] | None = None
+    """The GIN transports this communicator can use, e.g.
+    ``NcclGinType.GDAKI in props.available_gin_types``. Empty when GIN is
+    unavailable (NCCL 2.31+)."""
+
+    dev_comm_runtime_version_size: int | None = None
+    """Size, in bytes, of the device communicator structure in the running NCCL
+    library (NCCL 2.31+)."""
+
 
 @dataclass(frozen=True)
 class WaitSignalDesc(LowppSpec, lowpp_cls=_nccl_bindings.WaitSignalDesc):
@@ -154,10 +235,12 @@ class WaitSignalDesc(LowppSpec, lowpp_cls=_nccl_bindings.WaitSignalDesc):
     """Number of signal operations to wait for from the peer. Defaults to 1."""
 
     signal_index: int = Field(default=0, lowpp_name="sig_idx")
-    """Signal index identifier. Currently must be 0. Defaults to 0."""
+    """Signal index identifier. Must lie in ``[0, num_rma_sig)``; see
+    :py:attr:`NCCLConfig.num_rma_sig`. Defaults to 0."""
 
     context: int = Field(default=0, lowpp_name="ctx")
-    """Context identifier. Currently must be 0. Defaults to 0."""
+    """Context identifier. Must lie in ``[0, num_rma_ctx)``; see
+    :py:attr:`NCCLConfig.num_rma_ctx`. Defaults to 0."""
 
 
 @dataclass(frozen=True)
@@ -288,6 +371,16 @@ class NCCLDevCommRequirements(LowppSpec, lowpp_cls=_nccl_bindings.DevCommRequire
     gin_va_signals_required: bool | None = None
     """Whether GIN VA signals are required by kernels using this devComm.
     When False, using GIN VA signals results in undefined behavior. If unset, NCCL uses True."""
+
+    gin_custom_stride: int | None = None
+    """Stride of ranks to connect for GIN. Only consulted when
+    :py:attr:`gin_connection_type` is
+    :py:attr:`NcclGinConnectionType.CUSTOM_STRIDE`, and must be a multiple of
+    :py:attr:`NCCLCommProperties.gin_min_stride`. If unset, NCCL uses 1."""
+
+    gin_type: NcclGinType | None = None
+    """GIN transport to require. If unset, NCCL uses
+    :py:attr:`NcclGinType.NONE`, accepting any available transport."""
 
     teams: tuple[TeamRequirement, ...] = ()
     """Per-team requirements. Entries for the same team (by value) are merged,
@@ -447,6 +540,7 @@ class Communicator:
         self._device: Device | None = None
         self._rank: int | None = None
         self._comm_properties: _nccl_bindings.CommProperties | None = None
+        self._properties: NCCLCommProperties | None = None
         self._children_in_progress = []
 
     def _check_valid(self, operation: str) -> None:
@@ -638,6 +732,7 @@ class Communicator:
         self._device = None
         self._rank = None
         self._comm_properties = None
+        self._properties = None
 
     # --- Communicator APIs ---
     def split(
@@ -1021,6 +1116,53 @@ class Communicator:
         return self._rank
 
     @property
+    def properties(self) -> NCCLCommProperties:
+        """All properties NCCL reports for this communicator.
+
+        Use this to read several properties at once, or to reach the fields
+        that have no dedicated accessor.
+
+        Raises:
+            NcclInvalid: If the communicator is not initialized.
+        """
+        self._check_valid("get properties")
+        if self._properties is None:
+            pod = self._get_comm_properties()
+            gin_support = getattr(pod, "gin_support", None)
+            gin_connection_type = getattr(pod, "gin_connection_type", None)
+            self._properties = NCCLCommProperties(
+                rank=pod.rank,
+                n_ranks=pod.n_ranks,
+                cuda_dev=pod.cuda_dev,
+                nvml_dev=pod.nvml_dev,
+                device_api_support=bool(pod.device_api_support),
+                multimem_support=bool(pod.multimem_support),
+                gin_type=NcclGinType(pod.gin_type),
+                n_lsa_teams=pod.n_lsa_teams,
+                host_rma_support=bool(pod.host_rma_support),
+                railed_gin_type=NcclGinType(pod.railed_gin_type),
+                comm_hash=getattr(pod, "comm_hash", None),
+                gin_min_stride=getattr(pod, "gin_min_stride", None),
+                gin_connection_type=(
+                    None
+                    if gin_connection_type is None
+                    else NcclGinConnectionType(gin_connection_type)
+                ),
+                # Copied out: the lowpp accessor aliases the CommProperties
+                # buffer. Iterating the enum skips the array's reserved tail;
+                # NONE is not a transport.
+                available_gin_types=(
+                    None
+                    if gin_support is None
+                    else frozenset(
+                        t for t in NcclGinType if t is not NcclGinType.NONE and gin_support[t]
+                    )
+                ),
+                dev_comm_runtime_version_size=getattr(pod, "dev_comm_runtime_version_size", None),
+            )
+        return self._properties
+
+    @property
     def cuda_dev(self) -> int:
         """CUDA device ID associated with this communicator.
 
@@ -1073,10 +1215,12 @@ class Communicator:
 
     @property
     def gin_type(self) -> NcclGinType:
-        """GPU-Initiated Networking (GIN) type.
+        """GPU-Initiated Networking (GIN) type reaching every rank.
 
-        If equal to NcclGinType.NONE, a device communicator cannot be
-        created with GIN resources.
+        If equal to :py:attr:`NcclGinType.NONE`, a device communicator
+        cannot be created with GIN connection type
+        :py:attr:`NcclGinConnectionType.FULL`. A rail-restricted transport
+        may still be available; see :py:attr:`railed_gin_type`.
 
         Raises:
             NcclInvalid: If the communicator is not initialized.
@@ -1309,8 +1453,10 @@ class Communicator:
 
         Args:
             peer: Target rank to send the signal to.
-            signal_index: Signal index identifier. Currently must be 0.
-            context: Context identifier. Currently must be 0.
+            signal_index: Signal index identifier. Must lie in
+                ``[0, num_rma_sig)``; see :py:attr:`NCCLConfig.num_rma_sig`.
+            context: Context identifier. Must lie in ``[0, num_rma_ctx)``;
+                see :py:attr:`NCCLConfig.num_rma_ctx`.
             flags: Reserved for future use. Currently must be 0.
             stream: CUDA stream to enqueue the signal operation on. Defaults
                 to ``None`` (the default stream).
@@ -1357,8 +1503,10 @@ class Communicator:
                 (from :py:meth:`register_window`).
             peer_window_offset: Offset in the peer's window in elements.
                 Defaults to 0.
-            signal_index: Signal index identifier. Currently must be 0.
-            context: Context identifier. Currently must be 0.
+            signal_index: Signal index identifier. Must lie in
+                ``[0, num_rma_sig)``; see :py:attr:`NCCLConfig.num_rma_sig`.
+            context: Context identifier. Must lie in ``[0, num_rma_ctx)``;
+                see :py:attr:`NCCLConfig.num_rma_ctx`.
             flags: Reserved for future use. Currently must be 0.
             stream: CUDA stream to enqueue the put_signal operation on.
                 Defaults to ``None`` (the default stream).

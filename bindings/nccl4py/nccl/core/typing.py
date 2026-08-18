@@ -139,11 +139,14 @@ class NcclGinType(IntEnum):
 
     Reported by :py:attr:`Communicator.gin_type` and
     :py:attr:`Communicator.railed_gin_type` to indicate which device-side
-    network transport, if any, is available on the communicator.
+    network transport, if any, is available on the communicator, and accepted
+    by :py:attr:`NCCLDevCommRequirements.gin_type` to request one.
     """
 
     NONE = 0
-    """GIN not available on this communicator."""
+    """No GIN transport. When reported, none is available; when set on
+    :py:attr:`NCCLDevCommRequirements.gin_type` it instead means any
+    available transport is acceptable."""
     PROXY = 2
     """Proxy-based GIN. Network operations issued from a device kernel are
     relayed through a CPU proxy thread."""
@@ -154,6 +157,9 @@ class NcclGinType(IntEnum):
     """GPU-Push Interface. GPU threads push network descriptors directly
     to a NIC-visible MMIO queue, with no CPU involvement and no memory
     barriers."""
+    EFA_GDA = 5
+    """EFA GPUDirect Async. Kernel-initiated network operations on AWS
+    Elastic Fabric Adapter NICs."""
 
 
 class NcclGinConnectionType(IntEnum):
@@ -173,6 +179,9 @@ class NcclGinConnectionType(IntEnum):
     RAIL = 2
     """Rail-restricted. Ranks must be reachable via GIN only within the
     same rail (network plane)."""
+    CUSTOM_STRIDE = 3
+    """Strided. Ranks must be reachable via GIN at the stride given by
+    :py:attr:`NCCLDevCommRequirements.gin_custom_stride`."""
 
 
 class NcclDataType(IntEnum):

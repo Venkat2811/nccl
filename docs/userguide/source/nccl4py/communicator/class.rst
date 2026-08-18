@@ -24,8 +24,10 @@ Device-API capability
 ---------------------
 
 These properties reflect the underlying NCCL :c:type:`ncclCommProperties_t`
-structure.
+structure. :py:attr:`Communicator.properties` returns all of them at once,
+including those with no single-field accessor.
 
+.. autoattribute:: Communicator.properties
 .. autoattribute:: Communicator.cuda_dev
 .. autoattribute:: Communicator.nvml_dev
 .. autoattribute:: Communicator.device_api_support
@@ -34,6 +36,11 @@ structure.
 .. autoattribute:: Communicator.n_lsa_teams
 .. autoattribute:: Communicator.host_rma_support
 .. autoattribute:: Communicator.railed_gin_type
+
+NCCLCommProperties
+------------------
+.. autoclass:: NCCLCommProperties
+   :members:
 
 Teams
 =====

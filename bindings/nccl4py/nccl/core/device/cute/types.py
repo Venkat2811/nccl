@@ -63,7 +63,8 @@ class GinBackendMask(IntFlag):
     PROXY = 1 << 2     # 4
     GDAKI = 1 << 3     # 8
     GPI = 1 << 4       # 16
-    ALL = PROXY | GDAKI | GPI
+    EFA_GDA = 1 << 5   # 32 (NCCL 2.31+)
+    ALL = PROXY | GDAKI | GPI | EFA_GDA
 
 
 class GinResourceSharingMode(IntEnum):
