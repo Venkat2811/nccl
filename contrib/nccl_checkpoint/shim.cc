@@ -118,16 +118,9 @@ static ncclResult_t captureCommRuntimeState(ncclComm_t synthComm, ncclComm_t rea
   const CommHandleEntry* entry = nullptr;
   NCCLCHECK(g_commHandles.find(synthComm, &entry));
   if (entry->config == nullptr) return ncclSuccess;
-  if (realComm->endMagic != NCCL_MAGIC) {
-    WARN("Compile and runtime version mismatch (Magic Mismatch).  libnccl-checkpoint-shim.so detected"
-         " that NCCL runtime is a different version.  Please recompile with the same versions.");
-    return ncclInternalError;
-  }
 
   CommInitParams* params = g_commHandles[synthComm].config;
-  params->commHash = realComm->commHash;
-  params->cudaDev = realComm->cudaDev;
-  return ncclSuccess;
+  return captureCommRuntimeProperties(realComm, params);
 }
 
 // CREATE:comm — records init params for restore

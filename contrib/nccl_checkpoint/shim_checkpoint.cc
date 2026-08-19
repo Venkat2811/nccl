@@ -83,21 +83,6 @@ static ncclResult_t replayCommResources(ncclComm_t synthComm) {
   return ncclSuccess;
 }
 
-static ncclResult_t commGetHash(ncclComm_t realComm, uint64_t* commHash) {
-  if (realComm->endMagic != NCCL_MAGIC) {
-    int runtime_version;
-    NCCLCHECK(ncclGetVersion(&runtime_version));
-    WARN("Detected memory sentinel mismatch!  Likely the NCCL runtime version "
-         "(%d) is not compatible with the libnccl-checkpoint-shim.so version (%d), "
-         "or the communicator has experienced memory corruption."
-         "  Please recompile with the same versions.",
-         runtime_version, NCCL_VERSION_CODE);
-    return ncclInternalError;
-  }
-  *commHash = realComm->commHash;
-  return ncclSuccess;
-}
-
 static bool commIsActiveForUser(const CommHandleEntry* entry) {
   assert(entry != nullptr);
   return entry->userState == comm_user_active;
@@ -453,9 +438,8 @@ extern "C" ncclResult_t ncclCheckpointPrepare(void) {
     ncclResult_t ret;
     NCCLCHECK(ncclCommGetAsyncError(realComm, &ret));
     NCCLCHECK_WAIT(ret, realComm);
-    // extract hash at prepare time rather than blocking during init time.
-    NCCLCHECK(commGetHash(realComm, &params->commHash));
-    params->cudaDev = realComm->cudaDev;
+    // Extract runtime properties at prepare time rather than blocking during init time.
+    NCCLCHECK(captureCommRuntimeProperties(realComm, params));
     TRACE(NCCL_CHECKPOINT, "prepare finalize comm %p real=%p hash=0x%016lx cudaDev=%d", synthComm, realComm,
           params->commHash, params->cudaDev);
     if (isActive) {
