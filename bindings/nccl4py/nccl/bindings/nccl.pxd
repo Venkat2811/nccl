@@ -111,10 +111,17 @@ cpdef object dev_comm_create(object comm, intptr_t reqs)
 cpdef dev_comm_destroy(object comm, intptr_t dev_comm)
 cpdef intptr_t get_lsa_multimem_device_pointer(object window, size_t offset) except? 0
 cpdef intptr_t get_lsa_device_pointer(object window, size_t offset, int lsa_rank) except? 0
+cpdef intptr_t get_multimem_device_pointer(object window, size_t offset, multimem) except? 0
 cpdef intptr_t get_peer_device_pointer(object window, size_t offset, int peer) except? 0
+cpdef tuple get_multimem_device_le_info(object window, size_t offset)
+cpdef tuple get_cft_device_le_info(object window, size_t offset, int peer_cft, cft_team)
+cpdef tuple get_peer_device_le_info(object window, size_t offset, int peer_world)
+cpdef lsa_barrier_create_requirement(team, int n_barriers, intptr_t out_handle, intptr_t out_req)
+cpdef gin_barrier_create_requirement(object comm, team, int n_barriers, intptr_t out_handle, intptr_t out_req)
 cpdef ll_a2a_create_requirement(int n_blocks, int n_slots, intptr_t out_handle, intptr_t out_req)
 
-# Hand-written: cybind cannot emit by-value struct returns.
+# Hand-written: the team getters return ncclTeam_t by value, which cybind cannot
+# emit; the rank mappers return int rather than ncclResult_t.
 cpdef object team_world(object comm)
 cpdef object team_lsa(object comm)
 cpdef object team_rail(object comm)
@@ -122,16 +129,11 @@ cpdef object team_cft(object comm, int mode)
 cpdef object team_cft_multimem(object comm)
 cpdef int team_rank_to_world(object comm, intptr_t team, int rank)
 cpdef int team_rank_to_lsa(object comm, intptr_t team, int rank)
-cpdef lsa_barrier_create_requirement(intptr_t team, int n_barriers, intptr_t out_handle, intptr_t out_req)
-cpdef gin_barrier_create_requirement(object comm, intptr_t team, int n_barriers, intptr_t out_handle, intptr_t out_req)
-cpdef object get_library_path()
-
-# Hand-written: CFT logical-endpoint queries with two out-params.
-cpdef tuple get_multimem_device_le_info(object window, size_t offset)
-cpdef tuple get_cft_device_le_info(object window, size_t offset, int peer_cft, intptr_t cft_team)
-cpdef tuple get_peer_device_le_info(object window, size_t offset, int peer_world)
 
 # Hand-written: Param API (SKIP_LOWPP in nccl.cybind.yaml).
 cpdef str param_get_parameter(str key)
 cpdef list param_get_all_keys()
 cpdef param_dump_all()
+
+# Hand-written: not an NCCL entry point; reports the path of the loaded DSO.
+cpdef object get_library_path()

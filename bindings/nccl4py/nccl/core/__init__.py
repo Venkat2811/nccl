@@ -46,6 +46,9 @@ __all__ = [  # noqa: RUF022
     "NcclRedOp",
     "NcclGinType",
     "NcclGinConnectionType",
+    "NcclHostCftMode",
+    "NcclCftTeamMode",
+    "NcclCftCap",
     "NcclCommMemStat",
     "NcclBufferSpec",
     "NcclScalarSpec",
@@ -101,6 +104,7 @@ __all__ = [  # noqa: RUF022
     "LLA2AHandle",
     "RegisteredBufferHandle",
     "RegisteredWindowHandle",
+    "CftLeInfo",
     "CustomRedOp",
     "DevCommResource",
     # Group

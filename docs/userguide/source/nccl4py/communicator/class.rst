@@ -53,6 +53,13 @@ These properties return the predefined teams; pass one to
 .. autoattribute:: Communicator.team_world
 .. autoattribute:: Communicator.team_lsa
 .. autoattribute:: Communicator.team_rail
+.. autoattribute:: Communicator.team_cft_multimem
 
+.. automethod:: Communicator.team_cft
 .. automethod:: Communicator.team_rank_to_world
 .. automethod:: Communicator.team_rank_to_lsa
+
+NcclCftTeamMode
+---------------
+.. autoclass:: NcclCftTeamMode
+   :members:

@@ -46,6 +46,9 @@ from nccl.core.typing import (
     NcclRedOp,
     NcclGinType,
     NcclGinConnectionType,
+    NcclHostCftMode,
+    NcclCftTeamMode,
+    NcclCftCap,
     NcclStreamSpec,
     NcclScalarSpec,
     NcclInvalid,
@@ -144,6 +147,9 @@ class NCCLConfig(LowppSpec, lowpp_cls=_nccl_bindings.Config):
 
     rma_eager_init: bool | None = None
     """Whether the collective one-sided RMA signal setup is initialized at communicator creation rather than at the first window registration (NCCL 2.31+). True is required if the communicator issues signal or wait-signal operations without first registering a symmetric window. Also controllable via the ``NCCL_RMA_EAGER_INIT`` environment variable, which takes precedence. If unset, NCCL uses False."""
+
+    host_cft_mode: NcclHostCftMode | None = None
+    """Host-side Compute Fabric Transport mode (NCCL 2.31+). Controls whether the communicator creates the CUDA fabric logical endpoints backing the host-side CFT queries. If unset, NCCL uses :py:attr:`NcclHostCftMode.DEFAULT`."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -380,6 +386,16 @@ class NCCLDevCommRequirements(LowppSpec, lowpp_cls=_nccl_bindings.DevCommRequire
     gin_type: NcclGinType | None = None
     """GIN transport to require. If unset, NCCL uses
     :py:attr:`NcclGinType.NONE`, accepting any available transport."""
+
+    cft_caps: NcclCftCap | None = None
+    """Compute Fabric Transport capabilities to request, as a bitmask of
+    :py:class:`NcclCftCap` values. Creation fails if CFT resources are
+    requested on a communicator where not all ranks support CFT. If unset,
+    NCCL uses :py:attr:`NcclCftCap.NONE`."""
+
+    cft_barrier_count: int | None = None
+    """Number of CFT barriers to allocate, one per independently addressed
+    barrier slot the kernel uses (commonly one per CTA). If unset, NCCL uses 0."""
 
     teams: tuple[TeamRequirement, ...] = ()
     """Per-team requirements. Entries for the same team (by value) are merged,
@@ -1264,6 +1280,37 @@ class Communicator:
         """
         self._check_valid("get team_rail")
         pod = _nccl_bindings.team_rail(self._comm)
+        return NCCLTeam(pod.n_ranks, pod.rank, pod.stride)
+
+    def team_cft(self, mode: NcclCftTeamMode = NcclCftTeamMode.FLAT) -> NCCLTeam:
+        """The CFT team for this communicator, in the requested layout.
+
+        Args:
+            mode: Team layout. Defaults to
+                :py:attr:`NcclCftTeamMode.FLAT`, matching the C default.
+
+        Raises:
+            NcclInvalid: If the communicator is not initialized.
+
+        See Also:
+            :c:func:`ncclTeamCft`
+        """
+        self._check_valid("get team_cft")
+        pod = _nccl_bindings.team_cft(self._comm, int(mode))
+        return NCCLTeam(pod.n_ranks, pod.rank, pod.stride)
+
+    @property
+    def team_cft_multimem(self) -> NCCLTeam:
+        """The CFT multimem team for this communicator.
+
+        Raises:
+            NcclInvalid: If the communicator is not initialized.
+
+        See Also:
+            :c:func:`ncclTeamCftMultimem`
+        """
+        self._check_valid("get team_cft_multimem")
+        pod = _nccl_bindings.team_cft_multimem(self._comm)
         return NCCLTeam(pod.n_ranks, pod.rank, pod.stride)
 
     @property

@@ -26,6 +26,14 @@ CTAPolicy
    :members:
    :exclude-members: Default, Efficiency, Zero
 
+NcclHostCftMode
+===============
+
+Value of :py:attr:`NCCLConfig.host_cft_mode`.
+
+.. autoclass:: NcclHostCftMode
+   :members:
+
 NCCLDevCommRequirements
 =======================
 
@@ -33,6 +41,14 @@ Used by :py:meth:`Communicator.create_dev_comm`. Fields left unset
 (``None``) remain at NCCL's internal default.
 
 .. autoclass:: NCCLDevCommRequirements
+   :members:
+
+NcclCftCap
+----------
+
+Bitmask value of :py:attr:`NCCLDevCommRequirements.cft_caps`.
+
+.. autoclass:: NcclCftCap
    :members:
 
 Requirement entries

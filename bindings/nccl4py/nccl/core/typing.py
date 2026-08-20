@@ -13,7 +13,7 @@ interfaces for NCCL operations with comprehensive type hints.
 
 from __future__ import annotations
 
-from enum import IntEnum
+from enum import IntEnum, IntFlag
 from typing import Any, Protocol, TypeAlias, Union
 
 import numpy as _np
@@ -25,6 +25,9 @@ __all__ = [
     "NcclRedOp",
     "NcclGinType",
     "NcclGinConnectionType",
+    "NcclHostCftMode",
+    "NcclCftTeamMode",
+    "NcclCftCap",
     "NcclCommMemStat",
     "NcclBufferSpec",
     "NcclScalarSpec",
@@ -182,6 +185,59 @@ class NcclGinConnectionType(IntEnum):
     CUSTOM_STRIDE = 3
     """Strided. Ranks must be reachable via GIN at the stride given by
     :py:attr:`NCCLDevCommRequirements.gin_custom_stride`."""
+
+
+class NcclHostCftMode(IntEnum):
+    """Host-side Compute Fabric Transport (CFT) mode, mirroring
+    :c:type:`ncclHostCftMode_t`.
+
+    Set on :py:attr:`NCCLConfig.host_cft_mode` to control whether the
+    communicator creates the CUDA fabric logical endpoints that back the
+    host-side CFT queries.
+    """
+
+    DEFAULT = -2147483648
+    """Use the version-specific default."""
+    ENABLE = 1
+    """Enable host-side CFT support, creating the communicator's unicast and
+    multicast logical endpoints during the first window registration."""
+    DISABLE = 2
+    """Disable host-side CFT support."""
+    FALLBACK = 3
+    """Try to create the logical endpoints; on error, disable host-side CFT
+    instead of failing."""
+
+
+class NcclCftTeamMode(IntEnum):
+    """CFT team layout, mirroring :c:type:`ncclCftTeamMode_t`.
+
+    Selects which ranks in the CFT unicast group the CFT team
+    :py:meth:`Communicator.team_cft` includes.
+    """
+
+    FLAT = 0
+    """Every rank in the CFT unicast group."""
+    HIER_MULTIMEM = 1
+    """The ranks of the CFT unicast group sharing the same index across
+    multicast CFT groups."""
+    HIER_LSA = 2
+    """The ranks of the CFT unicast group sharing the same index across
+    LSA groups."""
+
+
+class NcclCftCap(IntFlag):
+    """Compute Fabric Transport capabilities, mirroring
+    :c:type:`ncclCftCap_t`.
+
+    Combined as a bitmask on :py:attr:`NCCLDevCommRequirements.cft_caps`.
+    """
+
+    NONE = 0x0
+    """No CFT capability requested."""
+    CFT = 0x1
+    """Request unicast CFT logical endpoints."""
+    MULTIMEM = 0x2
+    """Request multicast CFT operations and multimem CFT barriers."""
 
 
 class NcclDataType(IntEnum):

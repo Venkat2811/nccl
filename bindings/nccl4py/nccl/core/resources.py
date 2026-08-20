@@ -13,6 +13,7 @@ automatically closed when the communicator is destroyed or aborted.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 from nccl.bindings import nccl as _nccl_bindings
 from nccl.core._binding_helpers import LowppView
@@ -27,9 +28,21 @@ __all__ = [
     "LLA2AHandle",
     "RegisteredBufferHandle",
     "RegisteredWindowHandle",
+    "CftLeInfo",
     "CustomRedOp",
     "DevCommResource",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class CftLeInfo:
+    """CFT logical endpoint address returned by window LE-info queries."""
+
+    le_id: int
+    """Logical endpoint identifier."""
+
+    le_offset: int
+    """Byte offset within the logical endpoint."""
 
 
 class MultimemHandle(LowppView, lowpp_cls=_nccl_bindings.MultimemHandle):
@@ -382,6 +395,81 @@ class RegisteredWindowHandle(CommResource):
         self._check_valid()
         ptr = _nccl_bindings.get_peer_device_pointer(self._window, offset, peer)
         return ptr if ptr != 0 else None
+
+    # CFT operations address memory by an ``(le_id, le_offset)`` pair rather
+    # than by the pointer the ``get_*_device_pointer`` methods above return.
+
+    def get_multimem_le_info(self, offset: int = 0) -> CftLeInfo:
+        """Returns the multicast logical endpoint address for this window and offset.
+
+        Args:
+            offset: Byte offset within the window buffer. Defaults to 0.
+
+        Returns:
+            The logical endpoint address, as a :py:class:`CftLeInfo`.
+
+        Raises:
+            RuntimeError: If the window has been closed.
+
+        See Also:
+            :c:func:`ncclGetMultimemDeviceLeInfo`
+        """
+        self._check_valid()
+        le_id, le_offset = _nccl_bindings.get_multimem_device_le_info(
+            self._window, offset
+        )
+        return CftLeInfo(le_id, le_offset)
+
+    def get_cft_le_info(
+        self, peer_cft: int, cft_team: NCCLTeam, offset: int = 0
+    ) -> CftLeInfo:
+        """Returns the logical endpoint address for a peer within ``cft_team``.
+
+        Args:
+            peer_cft: Rank within ``cft_team``.
+            cft_team: The CFT team, as returned by
+                :py:meth:`Communicator.team_cft`.
+            offset: Byte offset within the window buffer. Defaults to 0.
+
+        Returns:
+            The logical endpoint address, as a :py:class:`CftLeInfo`.
+
+        Raises:
+            RuntimeError: If the window has been closed.
+
+        See Also:
+            :c:func:`ncclGetCftDeviceLeInfo`
+        """
+        self._check_valid()
+        team_lowpp = cft_team._to_lowpp()
+        le_id, le_offset = _nccl_bindings.get_cft_device_le_info(
+            self._window, offset, peer_cft, team_lowpp.ptr
+        )
+        return CftLeInfo(le_id, le_offset)
+
+    def get_peer_le_info(self, peer: int, offset: int = 0) -> CftLeInfo:
+        """Returns the logical endpoint address for a peer by world rank.
+
+        Args:
+            peer: World rank of the peer. Must fall within this rank's flat
+                CFT team, as returned by :py:meth:`Communicator.team_cft`;
+                NCCL rejects a peer outside it.
+            offset: Byte offset within the window buffer. Defaults to 0.
+
+        Returns:
+            The logical endpoint address, as a :py:class:`CftLeInfo`.
+
+        Raises:
+            RuntimeError: If the window has been closed.
+
+        See Also:
+            :c:func:`ncclGetPeerDeviceLeInfo`
+        """
+        self._check_valid()
+        le_id, le_offset = _nccl_bindings.get_peer_device_le_info(
+            self._window, offset, peer
+        )
+        return CftLeInfo(le_id, le_offset)
 
     def __repr__(self) -> str:
         return f"<RegisteredWindowHandle: size={self._size}, handle={self.handle:#x}, flags={self._flags}>"
