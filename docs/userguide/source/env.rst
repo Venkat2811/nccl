@@ -417,6 +417,28 @@ Values accepted
 ^^^^^^^^^^^^^^^
 The default value is 1, set to 0 to disable
 
+NCCL_IB_EVENT_BASED_LB
+----------------------
+(since 2.31)
+
+Enables event-based load balancing across the physical devices of a fused (virtual) IB device (see ``NCCL_IB_MERGE_NICS``).
+By default, NCCL splits each message equally across the devices of a fused device. When this variable is enabled, NCCL
+instead splits messages proportionally to the current link speed of each device. The current link speed of a device is
+queried with the ``ibv_query_port_speed`` API whenever that device reports an ``IBV_EVENT_DEVICE_SPEED_CHANGE``
+asynchronous event, and the distribution is recomputed at runtime from the new speeds.
+
+This feature is intended for NICs that expose a single interface with multiple planes underneath, where the interface
+can continue to operate at a reduced speed when a subset of its planes goes down. A full interface or NIC going down
+is considered a failure and is handled by the failover-recovery feature.
+
+Detecting speed changes requires ``IBV_EVENT_DEVICE_SPEED_CHANGE`` and ``ibv_query_port_speed`` support in the
+InfiniBand verbs library (``IBVERBS_1.16`` or newer). This variable has no effect on non-fused devices, since all data
+is sent on their single physical device regardless of its speed.
+
+Values accepted
+^^^^^^^^^^^^^^^
+The default value is 0 (data is split equally across devices), set to 1 to enable.
+
 NCCL_OOB_NET_ENABLE
 -------------------
 (since 2.23)
