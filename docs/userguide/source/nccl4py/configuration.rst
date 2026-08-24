@@ -4,8 +4,8 @@
 Configuration
 *************
 
-Configuration objects passed to communicator creation methods, plus the
-flag enums they consume.
+Configuration objects passed to communicator creation methods and to
+individual collectives, plus the flag enums they consume.
 
 NCCLConfig
 ==========
@@ -19,20 +19,35 @@ consumed.
 .. autoclass:: NCCLConfig
    :members:
 
+NcclHostCftMode
+---------------
+
+Value of :py:attr:`NCCLConfig.host_cft_mode`.
+
+.. autoclass:: NcclHostCftMode
+   :members:
+
+NCCLCollConfig
+==============
+
+Accepted as the ``config`` argument of every collective on
+:py:class:`Communicator`. Fields left unset fall back to the communicator's
+value for the resource knobs, and to NCCL's own default otherwise.
+
+.. autoclass:: NCCLCollConfig
+   :members:
+
+VendorOption
+------------
+.. autoclass:: VendorOption
+   :members:
+
 CTAPolicy
 =========
 
 .. autoclass:: CTAPolicy
    :members:
    :exclude-members: Default, Efficiency, Zero
-
-NcclHostCftMode
-===============
-
-Value of :py:attr:`NCCLConfig.host_cft_mode`.
-
-.. autoclass:: NcclHostCftMode
-   :members:
 
 NCCLDevCommRequirements
 =======================

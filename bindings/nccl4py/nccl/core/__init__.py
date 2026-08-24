@@ -87,6 +87,8 @@ __all__ = [  # noqa: RUF022
     "WindowFlag",
     # Communicator
     "NCCLConfig",
+    "NCCLCollConfig",
+    "VendorOption",
     "NCCLCommProperties",
     "WaitSignalDesc",
     "TeamRequirement",

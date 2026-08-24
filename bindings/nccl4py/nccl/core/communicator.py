@@ -61,6 +61,8 @@ _Result = _nccl_bindings.Result
 
 __all__ = [
     "NCCLConfig",
+    "NCCLCollConfig",
+    "VendorOption",
     "NCCLCommProperties",
     "WaitSignalDesc",
     "TeamRequirement",
@@ -150,6 +152,134 @@ class NCCLConfig(LowppSpec, lowpp_cls=_nccl_bindings.Config):
 
     host_cft_mode: NcclHostCftMode | None = None
     """Host-side Compute Fabric Transport mode (NCCL 2.31+). Controls whether the communicator creates the CUDA fabric logical endpoints backing the host-side CFT queries. If unset, NCCL uses :py:attr:`NcclHostCftMode.DEFAULT`."""
+
+
+@dataclass(frozen=True)
+class VendorOption:
+    """A single vendor-specific option attached to an :py:class:`NCCLCollConfig`.
+
+    Mirrors one :c:type:`ncclConfigExt_t` node. Options are identified by the
+    ``(vendor_id, option_id)`` pair; the official NCCL library ignores every
+    extension, so an option only has an effect on a vendor library that
+    recognizes its ``vendor_id``. Vendors pick a non-zero ``vendor_id``
+    less than 2**24 that is unlikely to collide.
+
+    Exactly one of the three value fields must be set.
+
+    See Also:
+        :c:type:`ncclConfigExt_t`
+    """
+
+    vendor_id: int
+    """Vendor-chosen identifier, unique across vendor libraries."""
+
+    option_id: int
+    """Vendor-defined identifier distinguishing options within a vendor."""
+
+    int_value: int | None = None
+    """Integer value (``val.i``)."""
+
+    str_value: str | None = None
+    """String value (``val.s``), encoded to UTF-8."""
+
+    raw_value: int | None = None
+    """Value of any other type (``val.raw``), as an integer. If it is an
+    address, the referent must stay valid for the duration of the call."""
+
+    def __post_init__(self):
+        set_fields = [
+            name for name in ("int_value", "str_value", "raw_value")
+            if getattr(self, name) is not None
+        ]
+        if len(set_fields) != 1:
+            raise NcclInvalid(
+                "VendorOption requires exactly one of int_value, str_value, "
+                f"raw_value to be set, got {set_fields or 'none'}"
+            )
+
+
+def _validate_vendor_options(options: Sequence[Any]) -> None:
+    if isinstance(options, (VendorOption, str, bytes)) or not isinstance(options, Sequence):
+        raise NcclInvalid(
+            "vendor_options must be a sequence of VendorOption, got "
+            f"{type(options).__name__}"
+        )
+    seen = set()
+    for opt in options:
+        if not isinstance(opt, VendorOption):
+            raise NcclInvalid(
+                "vendor_options must contain VendorOption instances, got "
+                f"{type(opt).__name__}"
+            )
+        key = (opt.vendor_id, opt.option_id)
+        if key in seen:
+            raise NcclInvalid(
+                f"Duplicate vendor option key (vendor_id={opt.vendor_id}, "
+                f"option_id={opt.option_id}); keys must be unique"
+            )
+        seen.add(key)
+
+
+@dataclass(kw_only=True)
+class NCCLCollConfig(LowppSpec, lowpp_cls=_nccl_bindings.CollConfig):
+    """Per-call configuration for a single collective.
+
+    Accepted as the ``config`` argument of every collective on
+    :py:class:`Communicator`, tuning that one call. Fields left unset fall
+    back to the communicator's value, or to NCCL's own default. The same
+    configuration must be set on every rank; NCCL validates it only locally,
+    when the call is issued.
+
+    See Also:
+        :c:type:`ncclCollConfig_t`
+    """
+
+    min_ctas: int | None = None
+    """Lower bound on channels/CTAs for this call. Also set by
+    ``NCCL_MIN_CTAS``, which takes precedence. If unset, inherits
+    :py:attr:`NCCLConfig.min_ctas`."""
+
+    max_ctas: int | None = None
+    """Upper bound on channels/CTAs for this call, clamped to the
+    communicator's ``max_ctas``. Also set by ``NCCL_MAX_CTAS``, which takes
+    precedence. If unset, inherits :py:attr:`NCCLConfig.max_ctas`."""
+
+    nvls_ctas: int | None = None
+    """NVLS-pool-specific channel cap for this call. Also set by
+    ``NCCL_NVLS_NCHANNELS``, which takes precedence. If unset, inherits
+    :py:attr:`NCCLConfig.nvls_ctas`."""
+
+    cga_cluster_size: int | None = None
+    """CUDA thread-block-cluster size (0-8, Hopper+). Inconsistent values
+    within one group are undefined behavior. Also set by
+    ``NCCL_CGA_CLUSTER_SIZE``, which takes precedence. If unset, inherits
+    :py:attr:`NCCLConfig.cga_cluster_size`."""
+
+    alg_selection: str | None = None
+    """Selection string filtering which algorithms this call may use, e.g.
+    ``"ring"``, ``"tree,ring"``, ``"^symk"``. If unset or empty, NCCL selects
+    automatically."""
+
+    force_alg_selection: bool | None = None
+    """Whether an unsatisfiable :py:attr:`alg_selection` is an error rather
+    than a fallback to automatic selection. If unset, NCCL uses True."""
+
+    cta_policy: CTAPolicy | None = None
+    """CTA scheduling policy for this call. Also set by ``NCCL_CTA_POLICY``,
+    which takes precedence. If unset, inherits
+    :py:attr:`NCCLConfig.cta_policy`."""
+
+    user_profiler_tag: int | None = None
+    """Opaque value delivered verbatim to profiler plugins with this call's
+    profiler events; does not affect execution. Values with the
+    most-significant bit set are reserved by NCCL. If unset, NCCL uses 0."""
+
+    vendor_options: tuple[VendorOption, ...] = ()
+    """Vendor-specific options; ``(vendor_id, option_id)`` keys must be
+    unique."""
+
+    def __post_init__(self):
+        _validate_vendor_options(self.vendor_options)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -409,6 +539,57 @@ class NCCLDevCommRequirements(LowppSpec, lowpp_cls=_nccl_bindings.DevCommRequire
     Each entry yields, in order, a handle in
     :py:attr:`~nccl.core.DevCommResource.resource_handles`. Entries are
     kept as-is (not merged): each is a distinct resource."""
+
+
+def _materialize_coll_config(
+    config: NCCLCollConfig | None,
+) -> tuple[Any | None, list[Any]]:
+    """Builds the lowpp ``CollConfig`` and its vendor-option chain.
+
+    Returns ``(lowpp, keepalive)``. ``keepalive`` holds the ``ConfigExt``
+    nodes and the ``val`` views that own encoded string buffers; the caller
+    must keep it referenced until the NCCL call returns, since the config
+    stores borrowed pointers into them. The call is the whole window: NCCL
+    resolves the config -- parsing ``alg_selection`` into an algorithm mask
+    -- before the entry point returns, even inside a group. A path that
+    defers that resolution must copy the config rather than borrow it.
+
+    Returns ``(None, [])`` when ``config`` is ``None``.
+    """
+    if config is None:
+        return None, []
+
+    # NCCLCollConfig is mutable, so revalidate Python-only extensions at the
+    # point of use rather than relying solely on construction-time validation.
+    _validate_vendor_options(config.vendor_options)
+    cfg = config._to_lowpp()
+    keepalive: list[Any] = []
+
+    nodes = []
+    for opt in config.vendor_options:
+        node = _nccl_bindings.ConfigExt()
+        node.key.vendor_id = int(opt.vendor_id)
+        node.key.option_id = int(opt.option_id)
+        # `node.val` is a fresh view each access, and the string setter parks
+        # the encoded bytes on the view it was called on -- hold that same
+        # view so the char* it wrote stays alive.
+        val = node.val
+        if opt.int_value is not None:
+            val.i = int(opt.int_value)
+        elif opt.str_value is not None:
+            val.s = opt.str_value
+        else:
+            val.raw = int(opt.raw_value)
+        nodes.append(node)
+        keepalive += [node, val]
+
+    for node, nxt in zip(nodes, nodes[1:]):
+        node.next = nxt
+    if nodes:
+        # A borrowed pointer: the `ext` setter stores no reference of its own.
+        cfg.ext = nodes[0].ptr
+
+    return cfg, keepalive
 
 
 def _materialize_team_requirements(
@@ -1587,19 +1768,21 @@ class Communicator:
         op: NcclRedOp | CustomRedOp,
         *,
         stream: NcclStreamSpec | None = None,
+        config: NCCLCollConfig | None = None,
     ) -> None:
         """All-reduce variant of :py:meth:`reduce`.
 
         Equivalent to ``reduce(sendbuf, recvbuf, op, root=None, stream=stream)``:
         reduces data across all ranks and stores identical copies in each
-        rank's recvbuf. See :py:meth:`reduce` for argument semantics.
+        rank's recvbuf. ``config`` is forwarded unchanged. See
+        :py:meth:`reduce` for argument semantics.
 
         See Also:
             :py:meth:`reduce`, :c:func:`ncclAllReduce`
         """
         self._check_valid("allreduce")
 
-        self.reduce(sendbuf, recvbuf, op, stream=stream)
+        self.reduce(sendbuf, recvbuf, op, stream=stream, config=config)
 
     def broadcast(
         self,
@@ -1608,6 +1791,7 @@ class Communicator:
         root: int,
         *,
         stream: NcclStreamSpec | None = None,
+        config: NCCLCollConfig | None = None,
     ) -> None:
         """Copies data from ``sendbuf`` on the root rank to all ranks' ``recvbuf``.
 
@@ -1626,6 +1810,8 @@ class Communicator:
             root: Root rank that broadcasts the data (0 to ``nranks - 1``).
             stream: CUDA stream for the operation. Defaults to ``None`` (the
                 default stream).
+            config: Per-call :py:class:`NCCLCollConfig`. Must be identical on
+                every rank. Defaults to ``None`` (NCCL's own defaults).
 
         Raises:
             NcclInvalid: If send and receive buffers have mismatched dtypes,
@@ -1659,9 +1845,16 @@ class Communicator:
         count = r.count
         dtype = r.dtype
 
-        _nccl_bindings.broadcast(
-            s_ptr, r_ptr, count, int(dtype), int(root), self._comm, get_stream_ptr(stream)
-        )
+        cfg, _cfg_keepalive = _materialize_coll_config(config)
+        if cfg is None:
+            _nccl_bindings.broadcast(
+                s_ptr, r_ptr, count, int(dtype), int(root), self._comm, get_stream_ptr(stream)
+            )
+        else:
+            _nccl_bindings.broadcast_config(
+                s_ptr, r_ptr, count, int(dtype), int(root), self._comm,
+                get_stream_ptr(stream), cfg.ptr,
+            )
 
     def reduce(
         self,
@@ -1671,6 +1864,7 @@ class Communicator:
         root: int | None = None,
         *,
         stream: NcclStreamSpec | None = None,
+        config: NCCLCollConfig | None = None,
     ) -> None:
         """Reduces data from all ranks using the specified operation.
 
@@ -1700,6 +1894,8 @@ class Communicator:
                 Defaults to ``None``.
             stream: CUDA stream for the operation. Defaults to ``None`` (the
                 default stream).
+            config: Per-call :py:class:`NCCLCollConfig`. Must be identical on
+                every rank. Defaults to ``None`` (NCCL's own defaults).
 
         Raises:
             NcclInvalid: If send and receive buffers have mismatched dtypes,
@@ -1732,20 +1928,25 @@ class Communicator:
         count = s.count
         dtype = s.dtype
 
-        if root is None:
+        cfg, _cfg_keepalive = _materialize_coll_config(config)
+        if root is None and cfg is None:
             _nccl_bindings.all_reduce(
                 s_ptr, r_ptr, count, int(dtype), int(op), self._comm, get_stream_ptr(stream)
             )
-        else:
+        elif root is None:
+            _nccl_bindings.all_reduce_config(
+                s_ptr, r_ptr, count, int(dtype), int(op), self._comm,
+                get_stream_ptr(stream), cfg.ptr,
+            )
+        elif cfg is None:
             _nccl_bindings.reduce(
-                s_ptr,
-                r_ptr,
-                count,
-                int(dtype),
-                int(op),
-                int(root),
-                self._comm,
+                s_ptr, r_ptr, count, int(dtype), int(op), int(root), self._comm,
                 get_stream_ptr(stream),
+            )
+        else:
+            _nccl_bindings.reduce_config(
+                s_ptr, r_ptr, count, int(dtype), int(op), int(root), self._comm,
+                get_stream_ptr(stream), cfg.ptr,
             )
 
     def allgather(
@@ -1754,20 +1955,22 @@ class Communicator:
         recvbuf: NcclBufferSpec,
         *,
         stream: NcclStreamSpec | None = None,
+        config: NCCLCollConfig | None = None,
     ) -> None:
         """All-gather variant of :py:meth:`gather`.
 
         Equivalent to ``gather(sendbuf, recvbuf, root=None, stream=stream)``:
         gathers ``sendcount`` values from each rank and places identical
-        copies of the concatenated result in every rank's recvbuf. See
-        :py:meth:`gather` for argument semantics.
+        copies of the concatenated result in every rank's recvbuf.
+        ``config`` is forwarded unchanged. See :py:meth:`gather` for
+        argument semantics.
 
         See Also:
             :py:meth:`gather`, :c:func:`ncclAllGather`
         """
         self._check_valid("allgather")
 
-        self.gather(sendbuf, recvbuf, stream=stream)
+        self.gather(sendbuf, recvbuf, stream=stream, config=config)
 
     def reduce_scatter(
         self,
@@ -1776,6 +1979,7 @@ class Communicator:
         op: NcclRedOp | CustomRedOp,
         *,
         stream: NcclStreamSpec | None = None,
+        config: NCCLCollConfig | None = None,
     ) -> None:
         """Reduces data from all ranks and scatters the result across ranks.
 
@@ -1797,6 +2001,8 @@ class Communicator:
                 :py:class:`~nccl.core.CustomRedOp`).
             stream: CUDA stream for the operation. Defaults to ``None`` (the
                 default stream).
+            config: Per-call :py:class:`NCCLCollConfig`. Must be identical on
+                every rank. Defaults to ``None`` (NCCL's own defaults).
 
         Raises:
             NcclInvalid: If send and receive buffers have mismatched dtypes,
@@ -1832,9 +2038,16 @@ class Communicator:
         count = per_rank_count
         dtype = s.dtype
 
-        _nccl_bindings.reduce_scatter(
-            s_ptr, r_ptr, count, int(dtype), int(op), self._comm, get_stream_ptr(stream)
-        )
+        cfg, _cfg_keepalive = _materialize_coll_config(config)
+        if cfg is None:
+            _nccl_bindings.reduce_scatter(
+                s_ptr, r_ptr, count, int(dtype), int(op), self._comm, get_stream_ptr(stream)
+            )
+        else:
+            _nccl_bindings.reduce_scatter_config(
+                s_ptr, r_ptr, count, int(dtype), int(op), self._comm,
+                get_stream_ptr(stream), cfg.ptr,
+            )
 
     def alltoall(
         self,
@@ -1842,6 +2055,7 @@ class Communicator:
         recvbuf: NcclBufferSpec,
         *,
         stream: NcclStreamSpec | None = None,
+        config: NCCLCollConfig | None = None,
     ) -> None:
         """Each rank sends and receives ``count`` values to and from every other rank.
 
@@ -1859,6 +2073,8 @@ class Communicator:
             recvbuf: Destination buffer (size ``>= nranks * count`` elements).
             stream: CUDA stream for the operation. Defaults to ``None`` (the
                 default stream).
+            config: Per-call :py:class:`NCCLCollConfig`. Must be identical on
+                every rank. Defaults to ``None`` (NCCL's own defaults).
 
         Raises:
             NcclInvalid: If send and receive buffers have mismatched dtypes,
@@ -1894,9 +2110,16 @@ class Communicator:
         count = per_rank_count
         dtype = s.dtype
 
-        _nccl_bindings.allto_all(
-            s_ptr, r_ptr, count, int(dtype), self._comm, get_stream_ptr(stream)
-        )
+        cfg, _cfg_keepalive = _materialize_coll_config(config)
+        if cfg is None:
+            _nccl_bindings.allto_all(
+                s_ptr, r_ptr, count, int(dtype), self._comm, get_stream_ptr(stream)
+            )
+        else:
+            _nccl_bindings.allto_all_config(
+                s_ptr, r_ptr, count, int(dtype), self._comm,
+                get_stream_ptr(stream), cfg.ptr,
+            )
 
     def gather(
         self,
@@ -1905,6 +2128,7 @@ class Communicator:
         root: int | None = None,
         *,
         stream: NcclStreamSpec | None = None,
+        config: NCCLCollConfig | None = None,
     ) -> None:
         """Gathers ``sendcount`` values from all ranks.
 
@@ -1933,6 +2157,8 @@ class Communicator:
                 Defaults to ``None``.
             stream: CUDA stream for the operation. Defaults to ``None`` (the
                 default stream).
+            config: Per-call :py:class:`NCCLCollConfig`. Must be identical on
+                every rank. Defaults to ``None`` (NCCL's own defaults).
 
         Raises:
             NcclInvalid: If send and receive buffers have mismatched dtypes,
@@ -1967,13 +2193,24 @@ class Communicator:
         count = s.count
         dtype = s.dtype
 
-        if root is None:
+        cfg, _cfg_keepalive = _materialize_coll_config(config)
+        if root is None and cfg is None:
             _nccl_bindings.all_gather(
                 s_ptr, r_ptr, count, int(dtype), self._comm, get_stream_ptr(stream)
             )
-        else:
+        elif root is None:
+            _nccl_bindings.all_gather_config(
+                s_ptr, r_ptr, count, int(dtype), self._comm,
+                get_stream_ptr(stream), cfg.ptr,
+            )
+        elif cfg is None:
             _nccl_bindings.gather(
                 s_ptr, r_ptr, count, int(dtype), int(root), self._comm, get_stream_ptr(stream)
+            )
+        else:
+            _nccl_bindings.gather_config(
+                s_ptr, r_ptr, count, int(dtype), int(root), self._comm,
+                get_stream_ptr(stream), cfg.ptr,
             )
 
     def scatter(
@@ -1983,6 +2220,7 @@ class Communicator:
         root: int,
         *,
         stream: NcclStreamSpec | None = None,
+        config: NCCLCollConfig | None = None,
     ) -> None:
         """Scatters data from the root rank to all ranks.
 
@@ -2003,6 +2241,8 @@ class Communicator:
             root: Root rank that scatters the data (0 to ``nranks - 1``).
             stream: CUDA stream for the operation. Defaults to ``None`` (the
                 default stream).
+            config: Per-call :py:class:`NCCLCollConfig`. Must be identical on
+                every rank. Defaults to ``None`` (NCCL's own defaults).
 
         Raises:
             NcclInvalid: If send and receive buffers have mismatched dtypes,
@@ -2042,9 +2282,16 @@ class Communicator:
         count = r.count
         dtype = r.dtype
 
-        _nccl_bindings.scatter(
-            s_ptr, r_ptr, count, int(dtype), int(root), self._comm, get_stream_ptr(stream)
-        )
+        cfg, _cfg_keepalive = _materialize_coll_config(config)
+        if cfg is None:
+            _nccl_bindings.scatter(
+                s_ptr, r_ptr, count, int(dtype), int(root), self._comm, get_stream_ptr(stream)
+            )
+        else:
+            _nccl_bindings.scatter_config(
+                s_ptr, r_ptr, count, int(dtype), int(root), self._comm,
+                get_stream_ptr(stream), cfg.ptr,
+            )
 
     # --- Registration ---
     def register_buffer(self, buffer: NcclBufferSpec) -> RegisteredBufferHandle:
