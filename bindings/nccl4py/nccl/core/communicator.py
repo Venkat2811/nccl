@@ -1312,6 +1312,10 @@ class Communicator:
         Use this to read several properties at once, or to reach the fields
         that have no dedicated accessor.
 
+        Returns:
+            An :py:class:`NCCLCommProperties` holding every field NCCL reports
+            for this communicator.
+
         Raises:
             NcclInvalid: If the communicator is not initialized.
         """
